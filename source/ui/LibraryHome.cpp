@@ -14,8 +14,45 @@ bool LibraryView::updateHome(ir_t& ir, bool aPressed) {
     int n = (int)libraries.size();
     if (n == 0) return true;
 
+    /* WiiFlix home: the cover line */
+    if (flixHome() && !browsePage) {
+        if (!browse.built())
+            runWithLoading([&]() { browse.build(libraries); });
+        browse.startLoader();
+        switch (browse.update(ir, irMode)) {
+        case CoverLine::Action::Open:
+            if (const JellyfinItem* it = browse.selectedItem()) {
+                JellyfinItem copy = *it;
+                browse.stopLoader();          // the detail page needs the connection
+                openItem(copy, State::LibsReady);
+            }
+            break;
+        case CoverLine::Action::Search:
+            browse.stopLoader();
+            searchQuery.clear();
+            searchResults.clear();
+            searchSel = 0; searchTop = 0;
+            searchKb.reset();
+            searchReturnState = State::LibsReady;
+            state = State::SearchInput;
+            irMode = false;
+            break;
+        case CoverLine::Action::Browse:       // the browse page (libraries, A-Z)
+            browse.stopLoader();
+            browsePage = true;
+            irMode = false;
+            break;
+        case CoverLine::Action::Profiles:
+            browse.stopLoader();
+            openProfileMenu();
+            return false;
+        default: break;
+        }
+        return false;
+    }
+
     if (flixHome()) {
-        BrowseHome& page = browsePage ? catalog : browse;
+        BrowseHome& page = catalog;
         if (!page.built())
             runWithLoading([&]() { page.build(libraries); });
         page.startLoader();
@@ -273,8 +310,12 @@ bool LibraryView::updateGlobalFavorites(ir_t& ir, bool aPressed) {
 
 // Home: the carousel (Flix theme), else the library grid / Activity
 void LibraryView::renderHome(ir_t& ir) {
-    if (flixHome() && (browsePage ? catalog : browse).built()) {
-        (browsePage ? catalog : browse).render(ir);
+    if (flixHome() && browsePage && catalog.built()) {
+        catalog.render(ir);
+        return;
+    }
+    if (flixHome() && !browsePage && browse.built()) {
+        browse.render(ir);
         return;
     }
 
@@ -432,7 +473,7 @@ void LibraryView::renderGlobalFavorites(ir_t& ir) {
  * the settings (signed in still), or WiiFin's own menu
  * --------------------------------------------------------------- */
 static const char* const PROFILE_MENU[5] = {
-    N_("Now Playing"), N_("Back to Jellyfin"), N_("Switch Profile"), N_("Settings"), N_("WiiFin Menu")
+    N_("Now Playing"), N_("Back to Jellyfin"), N_("Switch Profile"), N_("Settings"), N_("WiiFlix Menu")
 };
 /* Now Playing, first, while a music session plays */
 static int pmFirst() { return MusicSession::active() ? 0 : 1; }

@@ -1,3 +1,26 @@
+# WiiFlix
+
+A fork of [WiiFin](https://github.com/fabienmillet/WiiFin) (Jellyfin client for the Nintendo Wii) with a different home screen: **one long line of cover art, one row at a time.**
+
+| Control | Action |
+|---|---|
+| D-pad Left / Right | Previous / next cover (hold to keep going) |
+| D-pad Up / Down | Previous / next row: Continue Watching, then one row per movie/TV genre |
+| A | Open the selected title (pointer: click a side cover to select it, click the middle one to open it) |
+| Scrub bar knob | Hold A on it and drag to race through a long row; click the track to jump |
+| Scrub bar arrows | Click to step one cover; hold A to repeat |
+| 1 / + / 2 | Search / Browse libraries / Profiles |
+
+The home screen lives in `source/ui/CoverLine.cpp`. Everything else (sign-in, detail pages, playback through MPlayer CE, HTTPS) is WiiFin's code.
+
+Build exactly as WiiFin (devkitPPC, `./setup.sh`, then `make` and `make wad`). The output is `WiiFlix.dol` / `WiiFlix.wad`; on SD it goes to `apps/WiiFlix/boot.dol`. The WAD installs as its own channel (`WFLX`) beside WiiFin, though it still uses WiiFin's channel banner from `tools/wad/template.wad`.
+
+Licensed GPL-3.0, like WiiFin.
+
+---
+
+## Original WiiFin README
+
 <p align="center">
   <img src="https://raw.githubusercontent.com/fabienmillet/WiiFin/refs/heads/main/assets/logo_wiifin_banner.png" alt="WiiFin logo" width="600"/><br>
   <em>Jellyfin client for the Nintendo Wii</em>

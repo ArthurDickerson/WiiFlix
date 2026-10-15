@@ -83,7 +83,7 @@ bool showErrorScreen(const char* title, const std::string& line1,
         Ui::text(138, 170, title, 20, p.danger);
         Ui::text(100, 210, line1.c_str(), 15, p.text);
         Ui::text(100, 236, line2.c_str(), 13, p.textDim);
-        Ui::textRight(546, 258, "WiiFin v" WIIFIN_VERSION, 11, p.textDim);   /* for bug reports */
+        Ui::textRight(546, 258, "WiiFlix v" WIIFIN_VERSION, 11, p.textDim);   /* for bug reports */
         if (retry) {
             const Ui::Hint l[] = { { "A", N_("Retry") } };
             const Ui::Hint r[] = { { "B", N_("Back") } };
@@ -220,16 +220,16 @@ void App::init(const char* argv0) {
         std::string p(argv0);
         size_t slash = p.rfind('/');
         if (slash != std::string::npos)
-            argvPath = p.substr(0, slash + 1) + "wiifin.cfg";
+            argvPath = p.substr(0, slash + 1) + "wiiflix.cfg";
     }
     const char* probes[] = {
         argvPath.empty() ? nullptr : argvPath.c_str(),
-        "/apps/WiiFin/wiifin.cfg",        // no prefix = default device
-        "sd:/apps/WiiFin/wiifin.cfg",
-        "fat:/apps/WiiFin/wiifin.cfg",
-        "fat0:/apps/WiiFin/wiifin.cfg",
-        "fat1:/apps/WiiFin/wiifin.cfg",
-        "usb:/apps/WiiFin/wiifin.cfg",
+        "/apps/WiiFlix/wiiflix.cfg",        // no prefix = default device
+        "sd:/apps/WiiFlix/wiiflix.cfg",
+        "fat:/apps/WiiFlix/wiiflix.cfg",
+        "fat0:/apps/WiiFlix/wiiflix.cfg",
+        "fat1:/apps/WiiFlix/wiiflix.cfg",
+        "usb:/apps/WiiFlix/wiiflix.cfg",
     };
     // mkdirp: create each component of `dir` (e.g. "sd:/apps/WiiFin") only
     // if the device supports mkdir_r.  mkdir() only creates one level, so we

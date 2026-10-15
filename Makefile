@@ -19,7 +19,7 @@ PKG_CONFIG  := PKG_CONFIG_LIBDIR=/opt/devkitpro/portlibs/ppc/lib/pkgconfig pkg-c
 #---------------------------------------------------------------------------------
 # Project structure
 #---------------------------------------------------------------------------------
-TARGET      := WiiFin
+TARGET      := WiiFlix
 BUILD       := build
 SOURCES     := source source/core source/input source/ui source/jellyfin source/player
 ASSETS      := data textures
@@ -219,7 +219,7 @@ $(BUILD)/stub_zone.o: source/stub_zone.s tools/stub_zone.bin
 # Safe inclusion of dependency files
 -include $(DEPFILES)
 
-# Installable channel (title WIFN): see tools/make_wad.py.  Needs libWiiPy;
+# Installable channel (title WFLX): see tools/make_wad.py.  Needs libWiiPy;
 # setup.sh installs it into tools/.venv, which is used when present.
 WADPY := $(if $(wildcard $(CURDIR)/tools/.venv/bin/python),$(CURDIR)/tools/.venv/bin/python,python3)
 

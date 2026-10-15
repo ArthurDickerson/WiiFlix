@@ -9,6 +9,7 @@
 #include "../jellyfin/RemoteControl.h"
 #include "MusicPlayerView.h"
 #include "BrowseHome.h"
+#include "CoverLine.h"
 #include "Keyboard.h"
 #include "ListFeed.h"
 
@@ -412,7 +413,7 @@ private:
     const char* labelForType(const std::string& type);
 
     // "Rows" home layout: carousel home (rows of posters) instead of the tile grid
-    BrowseHome browse;                  // what to watch now
+    CoverLine  browse;                  // WiiFlix home: one line of covers per row
     BrowseHome catalog;                 // the "browse" page (libraries, A-Z, genres)
     ListFeed   feed;                    // ItemsReady: whole library, loaded as it scrolls
     int        listRestoreSel = -1;     // selection to restore after a drill-down

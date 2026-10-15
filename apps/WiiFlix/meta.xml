@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<app version="1">
+  <name>WiiFlix</name>
+  <coder>WiiFlix contributors (fork of WiiFin by fabienmillet)</coder>
+  <version>0.1.0</version>
+  <release_date>20261015000000</release_date>
+  <short_description>Jellyfin client with a single-row cover browser</short_description>
+  <long_description>WiiFlix is a fork of WiiFin, the open-source Jellyfin client for the Nintendo Wii. It browses your library as one long line of cover art: Continue Watching first, then a row for every genre of your movies and TV shows. GPL-3.0.</long_description>
+</app>

@@ -47,8 +47,8 @@ def loader_image(dol: bytes) -> bytearray:
 
 
 def main() -> None:
-    dol_path = Path(sys.argv[1] if len(sys.argv) > 1 else "WiiFin.dol")
-    wad_path = Path(sys.argv[2] if len(sys.argv) > 2 else "WiiFin.wad")
+    dol_path = Path(sys.argv[1] if len(sys.argv) > 1 else "WiiFlix.dol")
+    wad_path = Path(sys.argv[2] if len(sys.argv) > 2 else "WiiFlix.wad")
     dol = dol_path.read_bytes()
     if len(dol) < 0x100 or struct.unpack(">I", dol[0xE0:0xE4])[0] != 0x80003F00:
         sys.exit(f"{dol_path}: not WiiFin's DOL (entry point is not 0x80003F00)")
@@ -62,6 +62,10 @@ def main() -> None:
     if len(img) != len(ref) or img[:w] != ref[:w] or img[w + 4:] != ref[w + 4:]:
         sys.exit("the template's NAND loader no longer matches tools/stub_zone.bin")
 
+    # WiiFlix gets its own channel ID (00010001-WFLX) so it installs next
+    # to WiiFin instead of replacing it.  The banner and icon still come
+    # from the WiiFin template WAD (tools/wad/template.wad).
+    title.set_title_id("00010001" + b"WFLX".hex().upper())
     title.set_content(dol, APP_INDEX)
     title.fakesign()
     wad_path.write_bytes(title.dump_wad())

@@ -302,7 +302,7 @@ int request(HttpStream* st, const std::string& host, int port, bool tls,
     std::string hostHdr = host + (port == (tls ? 443 : 80) ? "" : ":" + std::to_string(port));
     std::string req = "GET " + path + " HTTP/1.1\r\n"
                       "Host: " + hostHdr + "\r\n"
-                      "User-Agent: WiiFin\r\n"
+                      "User-Agent: WiiFlix\r\n"
                       "Accept: */*\r\n" +
                       (from >= 0 ? "Range: bytes=" + std::to_string(from) + "-\r\n" : std::string()) +
                       "Connection: close\r\n\r\n";

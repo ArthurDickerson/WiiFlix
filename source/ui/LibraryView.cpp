@@ -1137,7 +1137,9 @@ void LibraryView::clampMusicTrackScroll() {
 // update() — returns true when the user exits to the main menu
 // ---------------------------------------------------------------
 bool LibraryView::flixHome() const {
-    return Ui::homeLayout() == Ui::HomeLayout::Rows;
+    /* WiiFlix: the home is always the cover line (CoverLine), whatever the
+     * "Home Screen" setting says; + still opens the browse page */
+    return true;
 }
 
 /* The screens that only fetch, under the spinner */
@@ -1447,7 +1449,7 @@ bool LibraryView::render(ir_t& ir) {
         state == State::GlobalFavoritesLoad || state == State::SearchLoad ||
         /* the carousel home is built on the next update: no tile grid
          * flashing in between */
-        (state == State::LibsReady && flixHome() && !(browsePage ? catalog : browse).built()));
+        (state == State::LibsReady && flixHome() && !(browsePage ? catalog.built() : browse.built())));
     // Loading screen (shown one frame before blocking load), after a grace
     if (loading && loadingWait()) return false;
     if (!loading) loadingSince = spinnerSince = 0;
@@ -1489,7 +1491,7 @@ bool LibraryView::render(ir_t& ir) {
         Ui::text(EX + 58, EY + 20, tr("Error"), 20, p.danger);
         for (size_t i = 0; i < lines.size(); ++i)
             Ui::text(EX + 20, EY + 58 + i * 20, lines[i].c_str(), 15, p.text);
-        Ui::textRight(EX + EW - 16, EY + 22, "WiiFin v" WIIFIN_VERSION, 11, p.textDim);   /* for bug reports */
+        Ui::textRight(EX + EW - 16, EY + 22, "WiiFlix v" WIIFIN_VERSION, 11, p.textDim);   /* for bug reports */
         const Ui::Hint h[] = { { "A", N_("Back") } };
         Ui::footer(h, 1);
         drawCursor(ir);
