@@ -31,7 +31,7 @@ LibraryView::LibraryView(GRRLIB_ttfFont* f, GRRLIB_ttfFont* jf, GRRLIB_texImg* c
                           JellyfinClient& c,
                           const JellyfinAuth& a, const std::string& url)
     : font(f), jpFont(jf), cursorTex(cursor), ringTex(ring), client(c), auth(a), serverUrl(url),
-      browse(c, url, a), catalog(c, url, a, BrowseHome::Mode::Catalog), feed(c, url, a) {
+      browse(c, url, a), feed(c, url, a) {
 }
 
 // ---------------------------------------------------------------------------
@@ -170,6 +170,7 @@ void LibraryView::freeDetail() {
     detailSubSel   = -1;
     detailVersionSel = 0;
     detailFocus = 0;
+    detailHover = -1;
     trackMenu = TRACK_MENU_NONE;
     detailIsEpisode = false;
 }
@@ -654,7 +655,6 @@ void LibraryView::clearPendingPlay() {
 void LibraryView::onPlaybackFinished(const std::string& lastItemId) {
     clearPendingPlay();
     browse.invalidate();   // resume positions / next up changed
-    catalog.invalidate();
     if (state == State::DetailReady || state == State::ResumePrompt) {
         if (!lastItemId.empty()) detailItemId = lastItemId;
         /* an episode's page again, its picture wide: opened from the home
@@ -1174,11 +1174,11 @@ unsigned LibraryView::focusKey() const {
                     tvSuggestRow, tvSuggestContSel, tvSuggestRecSel, tvUpcomingSel,
                     musicSuggestSel, searchSel, specialsSel, specialsGroup,
                     sortPanel ? 1 + sortRow : 0, sortEdit.sort, sortEdit.genre, sortEdit.show,
-                    (int)browse.focusKey(), (int)catalog.focusKey() });
+                    (int)browse.focusKey() });
 }
 
 unsigned LibraryView::pageKey() const {
-    return mixKey({ homePage, movieTab, tvTab, musicTab, itemPage, browsePage ? 1 : 0 });
+    return mixKey({ homePage, movieTab, tvTab, musicTab, itemPage });
 }
 
 void LibraryView::toggleFavorite(const std::string& id, bool& favorite) {
@@ -1285,8 +1285,7 @@ bool LibraryView::update(ir_t& ir) {
     // The carousel's poster loader shares the HTTP connection: stop it as
     // soon as anything else may need the network.
     bool rowsShown = !done && state == State::LibsReady && flixHome();
-    if (!rowsShown || browsePage)  browse.stopLoader();
-    if (!rowsShown || !browsePage) catalog.stopLoader();
+    if (!rowsShown) browse.stopLoader();
     if (done || state != State::ItemsReady) feed.stopWorker();   // same connection
     return done;
 }
@@ -1447,7 +1446,7 @@ bool LibraryView::render(ir_t& ir) {
         state == State::GlobalFavoritesLoad || state == State::SearchLoad ||
         /* the carousel home is built on the next update: no tile grid
          * flashing in between */
-        (state == State::LibsReady && flixHome() && !(browsePage ? catalog.built() : browse.built())));
+        (state == State::LibsReady && flixHome() && !browse.built()));
     // Loading screen (shown one frame before blocking load), after a grace
     if (loading && loadingWait()) return false;
     if (!loading) loadingSince = spinnerSince = 0;

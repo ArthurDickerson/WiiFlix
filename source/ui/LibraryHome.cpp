@@ -15,7 +15,7 @@ bool LibraryView::updateHome(ir_t& ir, bool aPressed) {
     if (n == 0) return true;
 
     /* WiiFlix home: the cover line */
-    if (flixHome() && !browsePage) {
+    if (flixHome()) {
         if (!browse.built())
             runWithLoading([&]() { browse.build(libraries); });
         browse.startLoader();
@@ -37,55 +37,8 @@ bool LibraryView::updateHome(ir_t& ir, bool aPressed) {
             state = State::SearchInput;
             irMode = false;
             break;
-        case CoverLine::Action::Browse:       // the browse page (libraries, A-Z)
-            browse.stopLoader();
-            browsePage = true;
-            irMode = false;
-            break;
         case CoverLine::Action::Profiles:
             browse.stopLoader();
-            openProfileMenu();
-            return false;
-        default: break;
-        }
-        return false;
-    }
-
-    if (flixHome()) {
-        BrowseHome& page = catalog;
-        if (!page.built())
-            runWithLoading([&]() { page.build(libraries); });
-        page.startLoader();
-        switch (page.update(ir, irMode)) {
-        case BrowseHome::Action::Open:
-            if (const JellyfinItem* it = page.selectedItem()) {
-                JellyfinItem copy = *it;
-                if (copy.type == "CollectionFolder") {
-                    for (int i = 0; i < n; i++)
-                        if (libraries[i].id == copy.id) { libSel = i; openLibrary(i); break; }
-                } else {
-                    openItem(copy, State::LibsReady);
-                }
-            }
-            break;
-        case BrowseHome::Action::Search:
-            searchQuery.clear();
-            searchResults.clear();
-            searchSel = 0; searchTop = 0;
-            searchKb.reset();
-            searchReturnState = State::LibsReady;
-            state = State::SearchInput;
-            irMode = false;
-            break;
-        case BrowseHome::Action::Browse:      // "browse" <-> "home"
-            browsePage = !browsePage;
-            irMode = false;
-            break;
-        case BrowseHome::Action::Back:        // B on the browse page
-            browsePage = false;
-            irMode = false;
-            break;
-        case BrowseHome::Action::Profiles:
             openProfileMenu();
             return false;
         default: break;
@@ -310,11 +263,7 @@ bool LibraryView::updateGlobalFavorites(ir_t& ir, bool aPressed) {
 
 // Home: the carousel (Flix theme), else the library grid / Activity
 void LibraryView::renderHome(ir_t& ir) {
-    if (flixHome() && browsePage && catalog.built()) {
-        catalog.render(ir);
-        return;
-    }
-    if (flixHome() && !browsePage && browse.built()) {
+    if (flixHome() && browse.built()) {
         browse.render(ir);
         return;
     }

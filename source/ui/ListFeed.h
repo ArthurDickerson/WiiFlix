@@ -17,7 +17,7 @@
  * many titles sort before a letter, which is exactly that letter's index)
  * and loads the cover of the selected title when asked.
  *
- * Like BrowseHome, the thread uses the shared JellyfinClient connection:
+ * Like CoverLine, the thread uses the shared JellyfinClient connection:
  * stopWorker() before anything else makes a request.
  * ----------------------------------------------------------------------- */
 class ListFeed {

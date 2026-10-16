@@ -20,9 +20,8 @@
  *   Left / Right     previous / next cover (repeats while held)
  *   Up / Down        previous / next row (▲ / ▼ on screen)
  *   A                open the cover in focus (pointer: the one under it)
- *   -                the list of rows
- *   1                search        +   browse (libraries, A-Z)
- *   2                profiles
+ *   - / +            a page of covers back / on
+ *   1                search        2   profiles
  *
  * Rows: "Continue Watching" first (the default view), "Instant Queue" (the
  * titles favourited in Jellyfin: "Add to Queue"), then one row per genre
@@ -44,7 +43,7 @@
  * ----------------------------------------------------------------------- */
 class CoverLine {
 public:
-    enum class Action { None, Open, Search, Browse, Profiles };
+    enum class Action { None, Open, Search, Profiles };
 
     CoverLine(JellyfinClient& client, const std::string& serverUrl, const JellyfinAuth& auth);
     ~CoverLine();
@@ -134,6 +133,7 @@ private:
     void moveRow(int delta);
     void step(Row& row, int delta);
     void setFromTrack(Row& row, float x);
+    void page(Row& row, int dir);   /* - / +: a screenful back / on */
     /* covers that fit across the screen (one of them grown), and first
      * moved only as far as it takes to show sel (the D-pad, the scrub bar) */
     int  visibleCount() const;

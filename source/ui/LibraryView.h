@@ -8,7 +8,6 @@
 #include "../jellyfin/JellyfinClient.h"
 #include "../jellyfin/RemoteControl.h"
 #include "MusicPlayerView.h"
-#include "BrowseHome.h"
 #include "CoverLine.h"
 #include "Keyboard.h"
 #include "ListFeed.h"
@@ -43,7 +42,7 @@ public:
 
     // Name of the signed-in user (header avatar).
     void setUserName(const std::string& name) {
-        userName = name; browse.setUserName(name); catalog.setUserName(name);
+        userName = name; browse.setUserName(name);
     }
 
     std::string pendingPlayUrl;           // set before returning true when the user hits Play
@@ -230,8 +229,12 @@ private:
      * button, a track's button: LibraryDetail.cpp), and the track list open
      * (-1 Version, 0 Audio, 1 Subtitles) with its choice */
     int  detailFocus = 0;
+    int  detailHover = -1;     /* the button under the pointer last frame */
+    int  resumeHover = -1;     /* the resume question's, likewise */
     static const int TRACK_MENU_NONE = -2;
     int  trackMenu = TRACK_MENU_NONE, trackMenuSel = 0, trackMenuTop = 0;
+    int  trackMenuHover = -1;  /* the list's row under the pointer last frame */
+    bool trackMenuDpad = false;   /* the D-pad moved its choice last */
     void openTrackMenu(int which);
     int  trackMenuCount() const;
     std::string trackMenuLabel(int i) const;
@@ -419,13 +422,11 @@ private:
 
     // "Rows" home layout: carousel home (rows of posters) instead of the tile grid
     CoverLine  browse;                  // WiiFlix home: one line of covers per row
-    BrowseHome catalog;                 // the "browse" page (libraries, A-Z, genres)
     ListFeed   feed;                    // ItemsReady: whole library, loaded as it scrolls
     int        listRestoreSel = -1;     // selection to restore after a drill-down
     unsigned long long letterFlashMs = 0; // letter jump feedback
     char       letterFlash = 0;
     std::string userName;
-    bool       browsePage     = false;  // catalog shown instead of the home rows
 
     // Sort & filter of a film or series library's titles (2 in its list or
     // grid; LibrarySort.cpp): kept while the library stays open

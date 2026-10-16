@@ -101,7 +101,7 @@ private:
     void renderCredentials(ir_t& ir);
     void renderQuickConnect(ir_t& ir);
     void renderDiscover(ir_t& ir);
-    void renderBackground();
+    void renderBackground(const ir_t& ir);
     void renderCursor(ir_t& ir);
 
     // --- Discover tab ---

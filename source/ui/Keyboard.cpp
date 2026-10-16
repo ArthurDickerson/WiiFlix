@@ -180,10 +180,14 @@ void Keyboard::render(const ir_t& ir) const
             const char* lab = label(k, buf);
             bool special = k.sp != K_NONE;
             if (k.sp == K_ENTER) {
-                /* action key: always in the accent colour */
-                if (sel) Ui::shadow(x - 2, y - 2, w + 4, h + 4, 9, 8.0f, p.glow);
-                Ui::roundRect(x, y, w, h, 7, Ui::mix(p.accent, 0xFFFFFFFF, sel ? 0.35f : 0.15f), p.accentDark);
-                if (sel) Ui::roundBorder(x, y, w, h, 7, 2.0f, 0xFFFFFFC0);
+                /* action key: always orange; chosen or under the pointer,
+                 * a little bigger and lighter, like every button */
+                if (sel || hov) {
+                    Ui::grow(x, y, w, h, Ui::HOVER_GROW);
+                    Ui::shadow(x - 2, y - 1, w + 4, h + 3, 9, 8.0f, 0xF7922E80);
+                }
+                Ui::roundRect(x, y, w, h, 7, Ui::mix(Ui::HOVER_TOP, 0xFFFFFFFF, sel || hov ? 0.2f : 0.0f), Ui::HOVER_BOTTOM);
+                Ui::roundBorder(x, y, w, h, 7, 1.5f, Ui::HOVER_EDGE);
                 Ui::textCentered(x + w * 0.5f, y + (h - 15) * 0.5f - 1, tr(lab), 15, p.textOnAccent);
                 continue;
             }

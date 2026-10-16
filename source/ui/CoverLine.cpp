@@ -448,7 +448,7 @@ static void pill(float x, float y, float w, float h, bool hot)
     Ui::roundBorder(x, y, w, h, h * 0.5f, hot ? 2.0f : 1.0f, hot ? p.accent : p.cardBorder);
 }
 
-/* ---- The list of rows (A on the row's name, or -) --------------------- */
+/* ---- The list of rows (A on the row's name) ---------------------------- */
 
 /* a big panel over the line: the row shown named at its top (on every
  * page), the rows' names under it, MENU_ROWS a page (the one shown greyed:
@@ -661,12 +661,31 @@ void CoverLine::setFromTrack(Row& row, float x)
     keepVisible(row);
 }
 
+/* A screenful of covers back (-1) or on (+1): the line moves by the covers
+ * that fit, the focus with it (keeping its place on the screen); at an
+ * end, the focus goes to the first or last cover instead. */
+void CoverLine::page(Row& row, int dir)
+{
+    const int n = (int)row.items.size(), v = visibleCount();
+    if (n == 0) return;
+    const int last = n - v > 0 ? n - v : 0;
+    int first = row.first + dir * v;
+    if (first < 0)    first = 0;
+    if (first > last) first = last;
+    const int moved = first - row.first;
+    row.first = first;
+    int sel = moved ? row.sel + moved : (dir < 0 ? 0 : n - 1);
+    if (sel < 0)     sel = 0;
+    if (sel > n - 1) sel = n - 1;
+    row.sel = sel;
+    keepVisible(row);
+}
+
 CoverLine::Action CoverLine::update(const ir_t& ir, bool& irMode)
 {
     if (rows.empty()) return Action::None;
     evictFar();
     if (menuOpen) return updateMenu(ir);
-    if (Input::isLPressed()) { openMenu(); return Action::None; }
 
     const bool up    = Input::isUpPressed(),   down  = Input::isDownPressed();
     const bool left  = Input::isLeftPressed(), right = Input::isRightPressed();
@@ -675,7 +694,6 @@ CoverLine::Action CoverLine::update(const ir_t& ir, bool& irMode)
     if (up || down || left || right) irMode = false;
 
     if (Input::is1Pressed())      return Action::Search;
-    if (Input::isActionPressed()) return Action::Browse;
     if (Input::is2Pressed())      return Action::Profiles;
 
     if (up)   moveRow(-1);
@@ -731,10 +749,12 @@ CoverLine::Action CoverLine::update(const ir_t& ir, bool& irMode)
         else if (t >= repeatNext) { step(row, repeatDir); repeatNext = t + 90; }
     }
 
-    /* ---- D-pad ---- */
+    /* ---- D-pad; - / + a page ---- */
     if (n > 0) {
         if (left)  step(row, -1);
         if (right) step(row, +1);
+        if (Input::isLPressed())      { page(row, -1); irMode = false; }
+        if (Input::isActionPressed()) { page(row, +1); irMode = false; }
     }
 
     /* ---- A ---- */

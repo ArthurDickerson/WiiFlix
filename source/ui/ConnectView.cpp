@@ -493,7 +493,7 @@ void ConnectView::handleVKBInput(ir_t& ir) {
 static void drawField(const char* label, int x, int y, int w, const std::string& value,
                       bool focused, bool masked) {
     const Ui::Palette& p = Ui::pal();
-    Ui::text(x + 4, y - 21, tr(label), 15, focused ? p.accentDark : p.textDim);
+    Ui::text(x + 4, y - 21, tr(label), 15, focused ? Ui::HOVER_EDGE : p.textDim);
     std::string display = masked ? std::string(value.size(), '*') : value;
     if (focused) display += "_"; // caret
     // keep the end (and the caret) visible
@@ -502,34 +502,44 @@ static void drawField(const char* label, int x, int y, int w, const std::string&
     Ui::field(x - 6, y - 3, w + 12, 36, display.c_str(), 18, focused);
 }
 
+/* rectangular, orange and a little bigger when chosen or under the pointer */
 static void drawButton(int cx, int y, int w, int h, const char* label, bool focused) {
-    Ui::button(cx - w / 2, y, w, h, label, 20, focused ? Ui::pulse() : 0.0f);
+    Ui::button(cx - w / 2, y, w, h, label, 20, focused ? 1.0f : 0.0f, 3);
 }
+/* the words of a message box: orange for an error, not red */
+static const u32 ERROR_INK = 0xB9500AFF;   /* Ui::HOVER_EDGE */
 
 // Centred paragraph line.
 static void line(int y, const char* s, int size, u32 col) {
     Ui::textCentered(320, y, s, size, col);
 }
 
-void ConnectView::renderBackground() {
+void ConnectView::renderBackground(const ir_t& ir) {
     const Ui::Palette& p = Ui::pal();
     Ui::background();
     Ui::header(tr("Connect to Jellyfin"));
 
-    // Tabs: one pill split into the segments update() hit-tests
+    // Tabs: one rectangular bar split into the segments update() hit-tests;
+    // the open tab orange, another under the pointer orange and a little
+    // bigger, like every button
     {
         const float X0 = TAB_X0, X3 = TAB_X0 + 3 * TAB_W, Y = TAB_Y, H = TAB_H;
         const float seg[4] = { X0, X0 + TAB_W, X0 + 2 * TAB_W, X3 };
         const char* names[3] = { N_("Credentials"), N_("Quick Connect"), N_("Discover") };
-        Ui::shadow(X0, Y + 1, X3 - X0, H, H * 0.5f, 4.0f, p.shadow);
-        Ui::roundRect(X0, Y, X3 - X0, H, H * 0.5f, p.field, Ui::mix(p.field, p.cardBottom, 0.5f));
-        Ui::roundBorder(X0, Y, X3 - X0, H, H * 0.5f, 1.5f, p.fieldBorder);
+        Ui::shadow(X0, Y + 1, X3 - X0, H, 3, 4.0f, p.shadow);
+        Ui::roundRect(X0, Y, X3 - X0, H, 3, p.field, Ui::mix(p.field, p.cardBottom, 0.5f));
+        Ui::roundBorder(X0, Y, X3 - X0, H, 3, 1.5f, p.fieldBorder);
         for (int i = 0; i < 3; ++i) {
-            bool on = (int)activeTab == i;
+            const bool on = (int)activeTab == i;
             float sx = seg[i], sw = seg[i + 1] - seg[i];
-            if (on) Ui::roundRect(sx + 2, Y + 2, sw - 4, H - 4, (H - 4) * 0.5f,
-                                  Ui::mix(p.accent, 0xFFFFFFFF, 0.25f), p.accentDark);
-            Ui::textCentered(sx + sw * 0.5f, Y + 7, tr(names[i]), 15, on ? p.textOnAccent : p.textDim);
+            const bool hov = !on && ir.valid && ir.x >= sx && ir.x < sx + sw && ir.y >= Y && ir.y <= Y + H;
+            if (on || hov) {
+                float bx = sx + 2, by = Y + 2, bw = sw - 4, bh = H - 4;
+                if (hov) Ui::grow(bx, by, bw, bh, Ui::HOVER_GROW);
+                Ui::roundRect(bx, by, bw, bh, 3, Ui::HOVER_TOP, Ui::HOVER_BOTTOM);
+                Ui::roundBorder(bx, by, bw, bh, 3, 1.0f, Ui::HOVER_EDGE);
+            }
+            Ui::textCentered(sx + sw * 0.5f, Y + 7, tr(names[i]), 15, on || hov ? p.textOnAccent : p.textDim);
         }
     }
 
@@ -543,13 +553,13 @@ void ConnectView::renderBackground() {
         char wb[64];
         snprintf(wb, sizeof(wb), "%s...", tr("Connecting to the network"));
         int w = Ui::textWidth(wb, 14);
-        Ui::roundRect(320 - w / 2 - 16, 420, w + 32, 26, 13, p.cardTop, p.cardBottom);
-        Ui::roundBorder(320 - w / 2 - 16, 420, w + 32, 26, 13, 1.5f, p.accent);
-        Ui::text(320 - w / 2, 425, msg, 14, p.accentDark);
+        Ui::roundRect(320 - w / 2 - 16, 420, w + 32, 26, 3, p.cardTop, p.cardBottom);
+        Ui::roundBorder(320 - w / 2 - 16, 420, w + 32, 26, 3, 1.5f, Ui::HOVER_TOP);
+        Ui::text(320 - w / 2, 425, msg, 14, p.text);
     } else
     // Status (on two lines when the message is too wide)
     if (statusTimer > 0) {
-        u32 sc = statusError ? p.danger : p.ok;
+        u32 sc = statusError ? ERROR_INK : p.ok;
         const std::string msg = tr(statusMsg.c_str());
         int sw = Ui::textWidth(msg.c_str(), 14);
         std::string l1 = msg, l2;
@@ -565,8 +575,8 @@ void ConnectView::renderBackground() {
         if (!l2.empty()) { int w2 = Ui::textWidth(l2.c_str(), 14); if (w2 > w) w = w2; }
         int bh = l2.empty() ? 26 : 42;
         int by = 446 - bh;
-        Ui::roundRect(320 - w / 2 - 16, by, w + 32, bh, 13, p.cardTop, p.cardBottom);
-        Ui::roundBorder(320 - w / 2 - 16, by, w + 32, bh, 13, 1.5f, sc);
+        Ui::roundRect(320 - w / 2 - 16, by, w + 32, bh, 3, p.cardTop, p.cardBottom);
+        Ui::roundBorder(320 - w / 2 - 16, by, w + 32, bh, 3, 1.5f, sc);
         Ui::textCentered(320, by + 5, l1.c_str(), 14, sc);
         if (!l2.empty()) Ui::textCentered(320, by + 21, l2.c_str(), 14, sc);
     }
@@ -574,16 +584,25 @@ void ConnectView::renderBackground() {
 
 void ConnectView::renderCredentials(ir_t& ir) {
     int fx = 80, fw = 480;
-    drawField(N_("Server URL"), fx, 110, fw, fields[0],
-              focusedField == Field::Server && !kbActive, false);
-    drawField(N_("Username"),   fx, 180, fw, fields[1],
-              focusedField == Field::Username && !kbActive, false);
-    drawField(N_("Password"),   fx, 250, fw, fields[2],
-              focusedField == Field::Password && !kbActive, true);
+    /* under the pointer (the hit areas of update()), or the D-pad's: one */
+    int hover = -1;
+    if (ir.valid && !kbActive) {
+        if (ir.x >= 80 && ir.x <= 560) {
+            if      (ir.y >= 100 && ir.y <= 145) hover = (int)Field::Server;
+            else if (ir.y >= 170 && ir.y <= 215) hover = (int)Field::Username;
+            else if (ir.y >= 240 && ir.y <= 285) hover = (int)Field::Password;
+        }
+        if (ir.x >= 220 && ir.x <= 420 && ir.y >= 330 && ir.y <= 378) hover = (int)Field::SubmitBtn;
+    }
+    auto lit = [&](Field f) {
+        return !kbActive && (hover >= 0 ? hover == (int)f : focusedField == f);
+    };
+    drawField(N_("Server URL"), fx, 110, fw, fields[0], lit(Field::Server),   false);
+    drawField(N_("Username"),   fx, 180, fw, fields[1], lit(Field::Username), false);
+    drawField(N_("Password"),   fx, 250, fw, fields[2], lit(Field::Password), true);
 
     // Submit button
-    drawButton(320, 330, 200, 48, N_("Connect"),
-               focusedField == Field::SubmitBtn && !kbActive);
+    drawButton(320, 330, 200, 48, N_("Connect"), lit(Field::SubmitBtn));
 
     if (kbActive) {
         renderVKB(ir);
@@ -632,7 +651,7 @@ void ConnectView::renderQuickConnect(ir_t& ir) {
 
             /* Show current server URL or a warning if not set */
             if (fields[0].empty()) {
-                line(174, tr("Go to Credentials tab and enter the Server URL first."), 14, p.danger);
+                line(174, tr("Go to Credentials tab and enter the Server URL first."), 14, ERROR_INK);
             } else {
                 char sbuf[128];
                 snprintf(sbuf, sizeof(sbuf), tr("Server: %s"), fields[0].c_str());
@@ -650,8 +669,9 @@ void ConnectView::renderQuickConnect(ir_t& ir) {
             line(112, tr("Enter this code on your Jellyfin server:"), 17, p.text);
             // Big code display on a card
             int cw = Ui::textWidth(qcResult.code.c_str(), 52);
-            Ui::card(320 - cw / 2 - 30, 148, cw + 60, 80, 18, Ui::pulse());
-            Ui::textCentered(320, 160, qcResult.code.c_str(), 52, p.accentDark);
+            Ui::card(320 - cw / 2 - 30, 148, cw + 60, 80, 3, 0.0f);
+            Ui::roundBorder(320 - cw / 2 - 30, 148, cw + 60, 80, 3, 2.0f, Ui::HOVER_TOP);
+            Ui::textCentered(320, 160, qcResult.code.c_str(), 52, p.text);
             line(250, tr("Waiting for approval..."), 17, p.textDim);
             break;
         }
@@ -659,7 +679,7 @@ void ConnectView::renderQuickConnect(ir_t& ir) {
             line(200, tr("Approved! Signing in..."), 22, p.ok);
             break;
         case QCState::Error:
-            line(200, tr("Error. Press A to retry."), 20, p.danger);
+            line(200, tr("Error. Press A to retry."), 20, ERROR_INK);
             break;
     }
     const Ui::Hint l[] = { { "A", N_("Select") } };
@@ -693,13 +713,13 @@ void ConnectView::renderDiscover(ir_t& ir) {
             break;
 
         case DiscoverState::Scanning:
-            line(220, tr("Scanning..."), 22, p.accentDark);
+            line(220, tr("Scanning..."), 22, p.textDim);
             break;
 
         case DiscoverState::Done: {
             int n = (int)discoveredServers.size();
             if (n == 0) {
-                line(170, tr("No servers found."), 20, p.danger);
+                line(170, tr("No servers found."), 20, ERROR_INK);
                 line(200, tr("Check your network and server settings, then try again."), 14, p.textDim);
                 bool btnFocus = ir.valid &&
                                 ir.x >= 200 && ir.x <= 440 &&
@@ -714,11 +734,14 @@ void ConnectView::renderDiscover(ir_t& ir) {
                 bool irHov = ir.valid &&
                              ir.x >= 60 && ir.x <= 580 &&
                              ir.y >= rowY && ir.y <= rowY + 42;
-                float f = sel ? Ui::pulse() : (irHov ? 0.55f : 0.0f);
-                Ui::card(60, rowY, 520, 44, 12, f);
-                Ui::text(76, rowY + 5, discoveredServers[i].name.c_str(), 16,
-                         Ui::mix(p.text, p.accentDark, f));
-                Ui::text(76, rowY + 25, discoveredServers[i].address.c_str(), 13, p.textDim);
+                /* rectangular buttons: under the pointer, or the D-pad's
+                 * while the pointer is away, orange and a little bigger */
+                const bool on = ir.valid ? irHov : sel;
+                float bx = 60, by = rowY, bw = 520, bh = 44;
+                Ui::button(bx, by, bw, bh, "", 16, on ? 1.0f : 0.0f, 3);
+                if (on) Ui::grow(bx, by, bw, bh, Ui::HOVER_GROW);
+                Ui::text(bx + 16, by + 5, discoveredServers[i].name.c_str(), 16, on ? p.textOnAccent : p.text);
+                Ui::text(bx + 16, by + 25, discoveredServers[i].address.c_str(), 13, on ? 0xFFFFFFD0 : p.textDim);
             }
             break;
         }
@@ -729,7 +752,7 @@ void ConnectView::renderDiscover(ir_t& ir) {
 }
 
 void ConnectView::render(ir_t& ir) {
-    renderBackground();
+    renderBackground(ir);
     if      (activeTab == Tab::Credentials)  renderCredentials(ir);
     else if (activeTab == Tab::QuickConnect) renderQuickConnect(ir);
     else                                     renderDiscover(ir);

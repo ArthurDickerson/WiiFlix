@@ -149,12 +149,16 @@ bool LibraryView::updateDetail(ir_t& ir, bool aPressed) {
         int hover = -1;
         for (int i = 0; i < TRACK_MENU_ROWS && trackMenuTop + i < n; ++i)
             if (inBox(ir, mx + 6, my + 6 + i * MENU_STEP, mw - 12, MENU_ROW_H)) hover = trackMenuTop + i;
-        if (hover >= 0) trackMenuSel = hover;
-        if (Input::isUpPressed()   && trackMenuSel > 0)     --trackMenuSel;
-        if (Input::isDownPressed() && trackMenuSel + 1 < n) ++trackMenuSel;
+        /* one choice: the pointer takes it when it moves onto another row,
+         * the D-pad moves it too, even with the pointer on the screen */
+        if (hover >= 0 && hover != trackMenuHover) { trackMenuSel = hover; trackMenuDpad = false; }
+        trackMenuHover = hover;
+        if (Input::isUpPressed()   && trackMenuSel > 0)     { --trackMenuSel; trackMenuDpad = true; }
+        if (Input::isDownPressed() && trackMenuSel + 1 < n) { ++trackMenuSel; trackMenuDpad = true; }
         if (trackMenuSel < trackMenuTop) trackMenuTop = trackMenuSel;
         if (trackMenuSel >= trackMenuTop + TRACK_MENU_ROWS) trackMenuTop = trackMenuSel - TRACK_MENU_ROWS + 1;
-        if (Input::isBackPressed() || (aPressed && ir.valid && hover < 0)) {
+        /* A off the list closes it, unless the D-pad chose last */
+        if (Input::isBackPressed() || (aPressed && ir.valid && hover < 0 && !trackMenuDpad)) {
             SoundFX::play(SoundFX::FX::Back);
             trackMenu = TRACK_MENU_NONE;
         } else if (aPressed) {
@@ -167,21 +171,25 @@ bool LibraryView::updateDetail(ir_t& ir, bool aPressed) {
         return false;
     }
 
-    /* what A acts on: under the pointer, or the D-pad's choice */
-    int target = -1;
+    /* One focus, lit, which A acts on: the pointer moves it onto the button
+     * it comes onto (only then, so the D-pad can take it away while the
+     * pointer rests there), the D-pad moves it whether the pointer is on
+     * the screen or not. */
+    int hover = -1;
     if (ir.valid) {
-        if (overBack(ir))                                 target = F_BACK;
-        else if (inBox(ir, L.bx, L.playY, L.bw, L.playH)) target = F_PLAY;
-        else if (overviewCut && inBox(ir, moreX, moreY, moreW, moreH)) target = F_MORE;
-        else if (inBox(ir, L.bx, L.favY, L.bw, L.favH))   target = F_QUEUE;
+        if (overBack(ir))                                 hover = F_BACK;
+        else if (inBox(ir, L.bx, L.playY, L.bw, L.playH)) hover = F_PLAY;
+        else if (overviewCut && inBox(ir, moreX, moreY, moreW, moreH)) hover = F_MORE;
+        else if (inBox(ir, L.bx, L.favY, L.bw, L.favH))   hover = F_QUEUE;
         for (int i = 0; i < (int)rows.size(); ++i) {
             float x, y, w, h;
             rowBox(L, i, x, y, w, h);
-            if (inBox(ir, x, y, w, h)) target = F_ROW + i;
+            if (inBox(ir, x, y, w, h)) hover = F_ROW + i;
         }
-    } else {
-        target = detailFocus;
     }
+    if (hover >= 0 && hover != detailHover) detailFocus = hover;
+    detailHover = hover;
+    const int target = detailFocus;
 
     /* -, or A with the pointer on it: the overview the page cuts short */
     const bool onOverview = ir.valid && ir.x >= MARGIN && ir.x < 640 - MARGIN &&
@@ -211,6 +219,7 @@ bool LibraryView::updateDetail(ir_t& ir, bool aPressed) {
         if (detail.playbackPositionTicks > 0) {
             // There is a saved position — ask the user Continue / Start Over
             resumeSel = 0;
+            resumeHover = -1;
             state = State::ResumePrompt;
             return false;
         }
@@ -275,6 +284,8 @@ void LibraryView::openTrackMenu(int which) {
     trackMenuSel = which < 0 ? detailVersionSel : which == 0 ? detailAudioSel : detailSubSel + 1;
     if (trackMenuSel < 0) trackMenuSel = 0;
     trackMenuTop = trackMenuSel >= TRACK_MENU_ROWS ? trackMenuSel - TRACK_MENU_ROWS + 1 : 0;
+    trackMenuHover = -1;
+    trackMenuDpad  = false;
     SoundFX::play(SoundFX::FX::Open);
 }
 
@@ -290,29 +301,34 @@ std::string LibraryView::trackMenuLabel(int i) const {
     return i == 0 ? std::string(tr("Off")) : detail.subtitleStreams[i - 1].displayTitle;
 }
 
+/* The resume question's layout (drawn and hit-tested alike) */
+namespace {
+const int RP_W = 340, RP_H = 120;
+const int RP_X = (640 - RP_W) / 2, RP_Y = (480 - RP_H) / 2;
+const int RP_BW = 130, RP_BH = 32, RP_GAP = 16;
+const int RP_BX = RP_X + (RP_W - (RP_BW * 2 + RP_GAP)) / 2;
+const int RP_BY = RP_Y + RP_H - RP_BH - 18;
+int rpButtonX(int i) { return RP_BX + i * (RP_BW + RP_GAP); }
+}  // namespace
+
+/* Continue / From Start: one choice, lit, which A takes.  The pointer
+ * moves it onto the button it comes onto, the D-pad (Left / Right) moves
+ * it whether the pointer is on the screen or not; B goes back to the
+ * page. */
 bool LibraryView::updateResumePrompt(ir_t& ir, bool aPressed) {
-    // IR hover: set resumeSel to whichever button the cursor is over
-    if (ir.valid) {
-        const int DW2 = 340, DH2 = 120;
-        const int DX2 = (640 - DW2) / 2;
-        const int DY2 = (480 - DH2) / 2;
-        const int BW2 = 130, BH2 = 30, BGAP2 = 16;
-        const int bTotalW2 = BW2 * 2 + BGAP2;
-        const int bStartX2 = DX2 + (DW2 - bTotalW2) / 2;
-        const int bY2      = DY2 + DH2 - BH2 - 14;
-        for (int i = 0; i < 2; ++i) {
-            int bx = bStartX2 + i * (BW2 + BGAP2);
-            if (ir.x >= bx && ir.x < bx + BW2 &&
-                ir.y >= bY2 && ir.y < bY2 + BH2) {
-                resumeSel = i;
-                break;
-            }
-        }
-    }
-    // Left/Right toggles between Continue (0) and Start Over (1)
-    if (Input::isLeftPressed() || Input::isRightPressed())
-        resumeSel ^= 1;
+    int hover = -1;
+    if (ir.valid)
+        for (int i = 0; i < 2; ++i)
+            if (ir.x >= rpButtonX(i) && ir.x < rpButtonX(i) + RP_BW && ir.y >= RP_BY && ir.y < RP_BY + RP_BH)
+                hover = i;
+    if (hover >= 0 && hover != resumeHover) resumeSel = hover;
+    resumeHover = hover;
+    const int was = resumeSel;
+    if (Input::isLeftPressed())  resumeSel = 0;
+    if (Input::isRightPressed()) resumeSel = 1;
+    if (resumeSel != was) SoundFX::play(SoundFX::FX::Move);
     if (Input::isBackPressed()) {
+        SoundFX::play(SoundFX::FX::Back);
         state = State::DetailReady;
         return false;
     }
@@ -327,14 +343,9 @@ bool LibraryView::updateResumePrompt(ir_t& ir, bool aPressed) {
 void LibraryView::renderResumePrompt() {
     const Ui::Palette& p = Ui::pal();
     GRRLIB_Rectangle(Ui::screenLeft(), 0, Ui::screenWidth(), 480, p.dim, 1);
+    Ui::card(RP_X, RP_Y, RP_W, RP_H, 18, 0.0f);
 
-    // Dialog box (DW/DH/button geometry shared with update())
-    const int DW = 340, DH = 120;
-    const int DX = (640 - DW) / 2;
-    const int DY = (480 - DH) / 2;
-    Ui::card(DX, DY, DW, DH + 34, 18, 0.0f);
-
-    Ui::textCentered(320, DY + 14, tr("Resume playback?"), 17, p.text);
+    Ui::textCentered(320, RP_Y + 16, tr("Resume playback?"), 17, p.text);
     {
         int secs = (int)(detail.playbackPositionTicks / 10000000LL);
         int rh = secs / 3600, rm = (secs % 3600) / 60, rs = secs % 60;
@@ -342,26 +353,14 @@ void LibraryView::renderResumePrompt() {
         /* TRANSLATORS: under "Resume playback?": where it stopped, h:mm:ss or m:ss */
         if (rh > 0) snprintf(hint, sizeof(hint), tr("at %d:%02d:%02d"), rh, rm, rs);
         else        snprintf(hint, sizeof(hint), tr("at %d:%02d"), rm, rs);
-        Ui::textCentered(320, DY + 38, hint, 13, p.accentDark);
+        Ui::textCentered(320, RP_Y + 40, hint, 13, p.textDim);
     }
 
-    // Two buttons: Continue | From Start
+    // Two rectangular buttons: Continue | From Start, the choice orange
     const char* btnLabels[2] = { N_("Continue"), N_("From Start") };
-    const int BW = 130, BH = 30, BGAP = 16;
-    int bTotalW = BW * 2 + BGAP;
-    int bStartX = DX + (DW - bTotalW) / 2;
-    int bY      = DY + DH - BH - 14;
     for (int i = 0; i < 2; ++i)
-        Ui::button(bStartX + i * (BW + BGAP), bY, BW, BH, btnLabels[i], 15,
-                   resumeSel == i ? Ui::pulse() : 0.0f);
-
-    // Hints inside the dialog
-    const Ui::Hint h[] = { { "LR", N_("Select") }, { "A", N_("Confirm") }, { "B", N_("Cancel") } };
-    float hw = 0;
-    for (const auto& hi : h) hw += Ui::hintWidth(hi);
-    float hx = 320 - (hw - 14) * 0.5f;
-    Ui::roundRect(DX + 16, DY + DH - 2, DW - 32, 1.5f, 0.75f, Ui::alpha(p.cardBorder, 0.6f));
-    for (const auto& hi : h) hx += Ui::hint(hx, DY + DH + 6, hi);
+        Ui::button(rpButtonX(i), RP_BY, RP_BW, RP_BH, btnLabels[i], 15,
+                   resumeSel == i ? 1.0f : 0.0f, BTN_R);
 }
 
 // ---------------------------------------------------------------
@@ -376,7 +375,7 @@ void LibraryView::drawDetailView(ir_t& ir) {
     const DetailLayout L = detailLayout(detailWideThumb());
     const int pageW = 640 - 2 * (int)MARGIN;
 
-    Ui::backButton(backCx(), BACK_CY, BACK_R, overBack(ir) || (!ir.valid && detailFocus == F_BACK));
+    Ui::backButton(backCx(), BACK_CY, BACK_R, detailFocus == F_BACK);
 
     // ---- Title ----
     {
@@ -391,15 +390,15 @@ void LibraryView::drawDetailView(ir_t& ir) {
     }
 
     // ---- Poster, Play, Add to Queue ----
-    /* orange: under the pointer, or the D-pad's choice while it is away */
-    auto lit = [&](int f, bool hover) { return (ir.valid ? hover : detailFocus == f) ? 1.0f : 0.0f; };
+    /* orange: the focus only (the pointer's or the D-pad's, one at a time) */
+    auto lit = [&](int f) { return detailFocus == f ? 1.0f : 0.0f; };
     drawThumb(detailTex, L.px, L.py, L.pw, L.ph, 0.0f, progressOf(detail),
               detail.name.c_str(), false);
     Ui::button(L.bx, L.playY, L.bw, L.playH, N_("Play"), 19,
-               lit(F_PLAY, inBox(ir, L.bx, L.playY, L.bw, L.playH)), BTN_R);
+               lit(F_PLAY), BTN_R);
     Ui::button(L.bx, L.favY, L.bw, L.favH,
                detail.isFavorite ? N_("Remove from Queue") : N_("Add to Queue"), 14,
-               lit(F_QUEUE, inBox(ir, L.bx, L.favY, L.bw, L.favH)), BTN_R);
+               lit(F_QUEUE), BTN_R);
 
     // ---- Version / Audio / Subtitles, right of the buttons: A opens a list ----
     const std::vector<int> rows = trackRows(detail);
@@ -408,7 +407,7 @@ void LibraryView::drawDetailView(ir_t& ir) {
         const int row = rows[i];
         float bx, by, bw, bh;
         rowBox(L, i, bx, by, bw, bh);
-        const bool focused = trackMenu == row || lit(F_ROW + i, inBox(ir, bx, by, bw, bh)) > 0.0f;
+        const bool focused = trackMenu == row || detailFocus == F_ROW + i;
         Ui::button(bx, by, bw, bh, "", 13, focused ? 1.0f : 0.0f, BTN_R);
         const int ry = (int)(by + (bh - 13) * 0.5f) - 1;
         const u32 labelCol = focused ? p.textOnAccent : p.textDim;
@@ -493,7 +492,7 @@ void LibraryView::drawDetailView(ir_t& ir) {
             moreW = (float)Ui::textWidth(tr("Read more"), 14) + 28; moreH = 22;
             moreX = MARGIN + pageW - moreW; moreY = y + 1;
             Ui::button(moreX, moreY, moreW, moreH, N_("Read more"), 14,
-                       lit(F_MORE, inBox(ir, moreX, moreY, moreW, moreH)), BTN_R);
+                       lit(F_MORE), BTN_R);
         } else {
             moreY = -100;
         }

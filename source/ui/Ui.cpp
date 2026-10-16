@@ -835,11 +835,12 @@ void key(float x, float y, float w, float h, const char* label,
 void field(float x, float y, float w, float h, const char* value, int size, bool focused)
 {
     const Palette& p = pal();
-    if (focused) shadow(x - 2, y - 2, w + 4, h + 4, h * 0.5f + 2, 8.0f, p.glow);
-    else         shadow(x, y + 1, w, h, h * 0.5f, 4.0f, p.shadow);
-    roundRect(x, y, w, h, h * 0.5f, p.field);
-    roundBorder(x, y, w, h, h * 0.5f, focused ? 2.5f : 1.5f, focused ? p.accent : p.fieldBorder);
-    if (value) text(x + h * 0.5f, y + (h - size) * 0.5f - 1, value, size, p.text);
+    /* rectangular; chosen (typed in, or under the pointer): an orange edge */
+    if (focused) shadow(x - 2, y - 1, w + 4, h + 3, 5, 8.0f, 0xF7922E80);
+    else         shadow(x, y + 1, w, h, 3, 4.0f, p.shadow);
+    roundRect(x, y, w, h, 3, p.field);
+    roundBorder(x, y, w, h, 3, focused ? 2.5f : 1.5f, focused ? HOVER_TOP : p.fieldBorder);
+    if (value) text(x + 12, y + (h - size) * 0.5f - 1, value, size, p.text);
 }
 
 static Mtx s_savedView;

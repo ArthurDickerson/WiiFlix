@@ -176,7 +176,7 @@ void scrollbar(float x, float y, float h, int first, int visible, int total);
 void key(float x, float y, float w, float h, const char* label,
          bool sel, bool hover, bool special, bool latched);
 /* Text field (rounded, focus ring); value is drawn as given. */
-void field(float x, float y, float w, float h, const char* value, int size, bool focused);
+void field(float x, float y, float w, float h, const char* value, int size, bool focused);   /* rectangular */
 /* ---- Screen shape (4:3 / 16:9) ----------------------------------------
  * Views lay out a 640x480 column.  On a 16:9 TV the drawing space is
  * widened to about 854x480 (the column centred in it, x from screenLeft()
