@@ -1,7 +1,6 @@
 <p align="center">
   <img src="assets/logo_wiifin.png" alt="WiiFLIX" width="420"/><br>
-  <em>Your Jellyfin movies and TV shows on the Nintendo Wii,<br>
-  browsed the way the old Wii video channels did.</em>
+  <em>A recreation of Netflix for Wii using your Jellyfin movies and TV shows.</em>
 </p>
 
 ---
