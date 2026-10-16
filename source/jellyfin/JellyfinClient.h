@@ -81,6 +81,7 @@ struct JellyfinItemDetail {
     std::string name;
     std::string overview;      // synopsis
     std::string officialRating;
+    float       communityRating       = 0.0f;  // 0..10, 0 = unknown
     int         year                  = 0;
     long long   runtimeTicks          = 0; // RunTimeTicks (64-bit from Jellyfin API)
     long long   playbackPositionTicks = 0; // UserData.PlaybackPositionTicks

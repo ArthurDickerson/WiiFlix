@@ -10,6 +10,70 @@
 
 using namespace LibDraw;
 
+/* ---- The title page's layout (drawn and hit-tested alike) ---------- */
+namespace {
+
+const float MARGIN = 24;
+/* round back button, on the band's lower edge, top right */
+const float BACK_R = 20, BACK_CY = 44;
+float backCx() { return Ui::screenRight() - 34; }
+
+struct DetailLayout {
+    float px, py, pw, ph;          /* poster (pw before the 16:9 widening) */
+    float bx, bw;                  /* the two buttons' column              */
+    float playY, playH, favY, favH;
+    float rowsX, rowsW;            /* Version / Audio / Subtitles / Scenes */
+};
+
+DetailLayout detailLayout(bool wide)
+{
+    DetailLayout L;
+    L.px = MARGIN; L.py = 84;
+    L.pw = wide ? 128 : 84;  L.ph = wide ? 72 : 124;
+    L.bx = L.px + L.pw * WiiUtils::wsScaleX() + 16;
+    L.bw = 344 - L.bx;
+    L.playY = 88;  L.playH = 40;
+    L.favY  = 138; L.favH  = 32;
+    L.rowsX = 362; L.rowsW = 640 - MARGIN - L.rowsX;
+    return L;
+}
+
+bool inBox(const ir_t& ir, float x, float y, float w, float h)
+{
+    return ir.valid && ir.x >= x && ir.x < x + w && ir.y >= y && ir.y < y + h;
+}
+
+bool overBack(const ir_t& ir)
+{
+    if (!ir.valid) return false;
+    const float dx = ir.x - backCx(), dy = ir.y - BACK_CY;
+    return dx * dx + dy * dy < (BACK_R + 4) * (BACK_R + 4);
+}
+
+/* the track rows there are, top down: -1 Version, 0 Audio, 1 Subtitles,
+ * 2 Scenes; row i's box */
+std::vector<int> trackRows(const JellyfinItemDetail& d)
+{
+    std::vector<int> rows;
+    if (!d.versions.empty())        rows.push_back(-1);
+    if (!d.audioStreams.empty())    rows.push_back(0);
+    if (!d.subtitleStreams.empty()) rows.push_back(1);
+    if (!d.chapters.empty())        rows.push_back(2);
+    return rows;
+}
+const float ROW_STEP = 26, ROW_H = 22;
+void rowBox(const DetailLayout& L, int i, float& x, float& y, float& w, float& h)
+{
+    x = L.rowsX - 6; y = L.playY + i * ROW_STEP; w = L.rowsW + 6; h = ROW_H;
+}
+/* the rectangular buttons' corners */
+const float BTN_R = 3;
+
+const float OV_SIZE = 14, OV_STEP = 18;   /* the overview's lines */
+const float CREDITS_Y = 354;              /* Cast, Director, genres */
+
+}  // namespace
+
 bool LibraryView::updateDetail(ir_t& ir, bool aPressed) {
     /* the whole overview over the page: Up / Down a line, B or - closes */
     if (overviewPanel) {
@@ -21,8 +85,37 @@ bool LibraryView::updateDetail(ir_t& ir, bool aPressed) {
         else if (Input::isRightPressed()) overviewTop = overviewTop + OV_PANEL_ROWS < maxTop ? overviewTop + OV_PANEL_ROWS : maxTop;
         return false;
     }
+    /* the pointer on the back or favourite button */
+    if (aPressed && overBack(ir)) {
+        freeDetail();
+        state = detailReturnState;
+        return false;
+    }
+    if (aPressed) {
+        const DetailLayout L = detailLayout(detailWideThumb());
+        if (inBox(ir, L.bx, L.favY, L.bw, L.favH)) {
+            toggleFavorite(detailItemId, detail.isFavorite);
+            return false;
+        }
+        const std::vector<int> rows = trackRows(detail);
+        for (int i = 0; i < (int)rows.size(); ++i) {
+            float x, y, w, h;
+            rowBox(L, i, x, y, w, h);
+            if (!inBox(ir, x, y, w, h)) continue;
+            detailFocusRow = rows[i];
+            if (rows[i] == 2) { state = State::ScenesLoad; return false; }
+            if (rows[i] < 0)
+                selectVersion((detailVersionSel + 1) % (int)detail.versions.size());
+            else if (rows[i] == 0 && ++detailAudioSel >= (int)detail.audioStreams.size())
+                detailAudioSel = 0;
+            else if (rows[i] == 1 && ++detailSubSel >= (int)detail.subtitleStreams.size())
+                detailSubSel = -1;
+            return false;
+        }
+    }
     /* -, or A with the pointer on it: the overview the page cuts short */
-    const bool onOverview = ir.valid && ir.x >= 240 && ir.x < 630 && ir.y >= detailOvY0 && ir.y < detailOvY1;
+    const bool onOverview = ir.valid && ir.x >= MARGIN && ir.x < 640 - MARGIN &&
+                            ir.y >= detailOvY0 && ir.y < detailOvY1;
     if (overviewCut && (Input::isLPressed() || (aPressed && onOverview))) {
         SYS_Report("[Detail] the whole overview: %d lines\n", (int)overviewAll.size());
         overviewPanel = true;
@@ -172,176 +265,50 @@ void LibraryView::renderResumePrompt() {
 }
 
 // ---------------------------------------------------------------
-// drawDetailView()
+// drawDetailView(): the old video channels' title page.  Under the red
+// band: the title, a small poster with Play and the favourite button
+// beside it (the tracks further right), then a line of stars, rating,
+// year and running time, the overview, and Cast / Director / genres.
 // ---------------------------------------------------------------
 void LibraryView::drawDetailView(ir_t& ir) {
     const Ui::Palette& p = Ui::pal();
-    const int POSTER_X  = 20;
-    const int POSTER_Y  = 30;
-    const int INFO_X    = 240;
-    const int INFO_W    = 390;
+    const DetailLayout L = detailLayout(detailWideThumb());
+    const int pageW = 640 - 2 * (int)MARGIN;
 
-    // Episode thumbnails are 16:9; movie/show posters are portrait
-    // both end before the info card (INFO_X - 14 = 226): 20 + 196 / 20 + 200
-    const int POSTER_W2 = detailWideThumb() ? 196 : 200;
-    const int POSTER_H2 = detailWideThumb() ? 110 : 285;
-
-    float ws   = WiiUtils::wsScaleX();
-    int   visW = (int)(POSTER_W2 * ws + 0.5f);
-
-    // ---- Info panel ----
-    Ui::card(INFO_X - 14, POSTER_Y - 12, 640 - (INFO_X - 14) - 6, 438 - (POSTER_Y - 12), 16, 0.0f);
-
-    // ---- Thumbnail / Poster ----
-    bool posterHover = ir.valid
-        && ir.x >= POSTER_X && ir.x < POSTER_X + visW
-        && ir.y >= POSTER_Y && ir.y < POSTER_Y + POSTER_H2;
-    drawThumb(detailTex, POSTER_X, POSTER_Y, POSTER_W2, POSTER_H2,
-              posterHover ? 0.8f : 0.0f, progressOf(detail), detail.name.c_str(), false);
-
-    // ---- Play button overlay (shown when cursor hovers the poster) ----
-    if (posterHover) {
-        Ui::roundRect(POSTER_X, POSTER_Y, visW, POSTER_H2, 10, 0x00000070);
-        float cx = POSTER_X + visW * 0.5f;
-        float cy = POSTER_Y + POSTER_H2 * 0.5f - 8;
-        Ui::shadow(cx - 26, cy - 24, 52, 52, 26, 6.0f, 0x00000060);
-        Ui::circle(cx, cy, 26, p.accent);
-        Ui::roundBorder(cx - 26, cy - 26, 52, 52, 26, 2.0f, 0xFFFFFFE0);
-        Ui::triangle(cx - 8, cy - 12, cx + 13, cy, cx - 8, cy + 12, 0xFFFFFFFF);
-        Ui::textCentered(cx, cy + 32, tr("Play"), 15, 0xFFFFFFFF);
-    }
+    Ui::backButton(backCx(), BACK_CY, BACK_R, overBack(ir));
 
     // ---- Title ----
-    int y = POSTER_Y;
     {
         /* Japanese in it: drawn with the Japanese font (Text's fallback) */
         const std::string title = filterDejaVu(detail.name, 200);
-        const int w = INFO_W - 12 - (detail.isFavorite ? 28 : 0);
-        titleText(2, INFO_X, y, w, title, 22, p.text, true);
-        if (detail.isFavorite) {   /* a favourite: a heart after the title (1) */
-            int tw = (int)Text::width(font, title.c_str(), 22);
-            Text::print(INFO_X + (tw < w ? tw : w) + 8, y, font, "\xe2\x99\xa5", 22, 0xE8455AFF);
+        const int w = (int)(backCx() - BACK_R - 12 - MARGIN) - (detail.isFavorite ? 28 : 0);
+        titleText(2, MARGIN, 52, w, title, 20, p.text, true);
+        if (detail.isFavorite) {   /* in the queue (a favourite): a heart after the title (1) */
+            int tw = (int)Text::width(font, title.c_str(), 20);
+            Text::print(MARGIN + (tw < w ? tw : w) + 8, 52, font, "\xe2\x99\xa5", 20, p.accent);
         }
     }
-    y += 32;
 
-    // ---- Year  Runtime  Rating (chips) ----
-    {
-        char chips[4][24];
-        int nChips = 0;
-        if (detail.year)
-            snprintf(chips[nChips++], sizeof(chips[0]), "%d", detail.year);
-        if (detail.runtimeTicks > 0) {
-            int secs = (int)(detail.runtimeTicks / 10000000LL);
-            /* TRANSLATORS: a running time in seconds (a trailer, a clip) */
-            if (secs >= 60) snprintf(chips[nChips++], sizeof(chips[0]), "%s", Lang::runTime(secs / 60).c_str());
-            else            snprintf(chips[nChips++], sizeof(chips[0]), tr("%ds"), secs);
-        }
-        if (!detail.officialRating.empty())
-            snprintf(chips[nChips++], sizeof(chips[0]), "%s", detail.officialRating.c_str());
-        const int nInfo = nChips;
-        if (detail.played)
-            snprintf(chips[nChips++], sizeof(chips[0]), "\xe2\x9c\x93 %s", tr("Watched"));
-        int cx = INFO_X;
-        for (int i = 0; i < nChips; ++i) {
-            const bool seen = i >= nInfo;   /* the last chip, in green */
-            int cw = Ui::textWidth(chips[i], 13) + 18;
-            Ui::roundRect(cx, y, cw, 20, 10, p.field);
-            Ui::roundBorder(cx, y, cw, 20, 10, 1.0f, seen ? p.ok : p.fieldBorder);
-            Ui::textCentered(cx + cw / 2, y + 3, chips[i], 13, seen ? p.ok : p.textDim);
-            cx += cw + 6;
-        }
-        if (nChips) y += 28;
-    }
+    // ---- Poster, Play, favourite ----
+    const bool posterHover = inBox(ir, L.px, L.py, L.pw * WiiUtils::wsScaleX(), L.ph);
+    drawThumb(detailTex, L.px, L.py, L.pw, L.ph, posterHover ? 0.8f : 0.0f, progressOf(detail),
+              detail.name.c_str(), false);
+    const bool playHover = inBox(ir, L.bx, L.playY, L.bw, L.playH);
+    const bool favHover  = inBox(ir, L.bx, L.favY, L.bw, L.favH);
+    /* Play is what A does: orange under the pointer, and while it is away */
+    Ui::button(L.bx, L.playY, L.bw, L.playH, N_("Play"), 19,
+               playHover || !ir.valid ? 1.0f : 0.0f, BTN_R);
+    Ui::button(L.bx, L.favY, L.bw, L.favH,
+               detail.isFavorite ? N_("Remove from Queue") : N_("Add to Queue"), 14,
+               favHover ? 1.0f : 0.0f, BTN_R);
 
-    // ---- Resume hint (shown when playback position is saved) ----
-    if (detail.playbackPositionTicks > 0 && detail.runtimeTicks > 0) {
-        int secs = (int)(detail.playbackPositionTicks / 10000000LL);
-        int h    = secs / 3600, m = (secs % 3600) / 60;
-        int pct  = (int)(detail.playbackPositionTicks * 100LL / detail.runtimeTicks);
-        char buf[48];
-        /* TRANSLATORS: hours and minutes into the video, then how much of it is watched */
-        if (h > 0) snprintf(buf, sizeof(buf), tr("Resume at %dh%02d (%d%%)"), h, m, pct);
-        else       snprintf(buf, sizeof(buf), tr("Resume at %dmin (%d%%)"), m, pct);
-        Ui::triangle(INFO_X, y + 3, INFO_X + 9, y + 8, INFO_X, y + 13, p.accentDark);
-        Ui::text(INFO_X + 14, y, buf, 14, p.accentDark);
-        y += 20;
-    }
-
-    // ---- Genres ----
-    if (!detail.genres.empty()) {
-        std::string g;
-        for (size_t i = 0; i < detail.genres.size(); i++) {
-            if (i) g += "  \xc2\xb7  ";
-            g += detail.genres[i];
-        }
-        g = fitText(font, g, 14, INFO_W - 12);
-        Ui::text(INFO_X, y, g.c_str(), 14, p.textDim);
-        y += 18;
-    }
-    y += 6;
-
-    // ---- Overview (pre-computed lines, no per-frame width measuring) ----
-    if (!detailLines.empty()) {
-        detailOvY0 = y;
-        const bool hover = overviewCut && ir.valid && ir.x >= INFO_X && ir.x < INFO_X + INFO_W &&
-                           ir.y >= detailOvY0 && ir.y < detailOvY1;
-        for (const auto& line : detailLines) {
-            Ui::text(INFO_X, y, line.c_str(), 13, hover ? p.accentDark : Ui::mix(p.text, p.textDim, 0.25f));
-            y += 17;
-        }
-        if (overviewCut) {   /* the rest of it: - (or A on the text) */
-            const Ui::Hint more = { "-", N_("Read more") };
-            Ui::hint(INFO_X + INFO_W - 12 - Ui::hintWidth(more) + 14, y - 1, more);
-            y += 17;
-        }
-        detailOvY1 = y;
-        y += 6;
-    }
-
-    // ---- Cast & crew (max 6) ----
-    if (!detail.people.empty()) {
-        Ui::text(INFO_X, y, tr("Cast & crew"), 14, p.accentDark);
-        y += 18;
-        int shown = 0;
-        for (const auto& pp : detail.people) {
-            /* room for the "Read more" line and the version row */
-            if (shown >= 6 - (overviewCut ? 1 : 0) - (detail.versions.empty() ? 0 : 2)) break;
-            if (pp.name.empty() && pp.character.empty()) continue;
-            int rx = INFO_X + 8;
-            {
-                // All-Latin line: name in text colour, role dimmed
-                const std::string& nm = !pp.name.empty() ? pp.name : pp.character;
-                Ui::text(rx, y, nm.c_str(), 13, p.text);
-                std::string suffix;
-                if (!pp.name.empty()) {
-                    if (pp.role == "Director")          suffix = std::string(" ") + tr("(director)");
-                    else if (!pp.character.empty())     suffix = " - " + pp.character;
-                }
-                if (!suffix.empty()) {
-                    int nw = Ui::textWidth(nm.c_str(), 13);
-                    suffix = fitText(font, suffix, 13, INFO_W - 16 - nw);
-                    Ui::text(rx + nw, y, suffix.c_str(), 13, p.textDim);
-                }
-            }
-            y += 16;
-            shown++;
-        }
-        y += 4;
-    }
-
-    // ---- Audio / Subtitle stream selectors ----
-    // Drawn at a fixed bottom-anchor position so they're always visible.
-    const int STREAM_ROW_H = 24;
+    // ---- Audio / Subtitle / Version / Scenes, right of the buttons ----
     const bool hasVersions = !detail.versions.empty();
     const bool hasScenes   = !detail.chapters.empty();
-    const int STREAM_Y0 = 390 - (hasVersions ? STREAM_ROW_H : 0)    /* the version row first */
-                              - (hasScenes ? STREAM_ROW_H : 0);     /* the Scenes row last */
-    const bool hasAudio = !detail.audioStreams.empty();
-    const bool hasSub   = !detail.subtitleStreams.empty();
+    const bool hasAudio    = !detail.audioStreams.empty();
+    const bool hasSub      = !detail.subtitleStreams.empty();
+    float rowsBottom = L.playY;
     if (hasAudio || hasSub || hasVersions || hasScenes) {
-        Ui::roundRect(INFO_X, STREAM_Y0 - 8, INFO_W - 14, 1.5f, 0.75f, Ui::alpha(p.cardBorder, 0.6f));
-
         // Validate UTF-8 and truncate at a safe codepoint boundary so the
         // renderer never receives a broken multi-byte sequence.
         auto safeTitle = [](const char* s, int maxCodepoints) -> std::string {
@@ -369,56 +336,151 @@ void LibraryView::drawDetailView(ir_t& ir) {
             return out;
         };
 
-        for (int row = hasVersions ? -1 : 0; row < 3; row++) {
-            if (row == 0 && !hasAudio) continue;
-            if (row == 1 && !hasSub)   continue;
+        const int valX = (int)L.rowsX + 78, valW = (int)(L.rowsX + L.rowsW) - valX - 4;
+        const std::vector<int> rows = trackRows(detail);
+        for (int i = 0; i < (int)rows.size(); ++i) {
+            const int row = rows[i];
+            float bx, by, bw, bh;
+            rowBox(L, i, bx, by, bw, bh);
+            /* white buttons: orange under the pointer, or the D-pad's row
+             * (Left / Right change it) while the pointer is away */
+            const bool focused = ir.valid ? inBox(ir, bx, by, bw, bh) : detailFocusRow == row;
+            Ui::button(bx, by, bw, bh, "", 13, focused ? 1.0f : 0.0f, BTN_R);
+            const int ry = (int)(by + (bh - 13) * 0.5f) - 1;
+            const u32 labelCol = focused ? p.textOnAccent : p.textDim;
+            const u32 valueCol = focused ? p.textOnAccent : p.text;
             if (row == 2) {   /* the Scenes: A opens them */
-                if (!hasScenes) continue;
-                int ry = STREAM_Y0 + (2 + (hasVersions ? 1 : 0)) * STREAM_ROW_H;
-                bool focused = detailFocusRow == 2;
-                if (focused)
-                    Ui::roundRect(INFO_X - 6, ry - 3, INFO_W - 8, STREAM_ROW_H - 3, (STREAM_ROW_H - 3) * 0.5f,
-                                  Ui::mix(p.accent, 0xFFFFFFFF, 0.2f), p.accentDark);
                 char buf[64];
                 snprintf(buf, sizeof(buf), tr("%d chapters"), (int)detail.chapters.size());
                 std::string v = std::string(buf) + "  \xe2\x80\xba";
-                Ui::text(INFO_X + 4, ry, tr("Scenes"), 13, focused ? p.textOnAccent : p.textDim);
-                Text::print(INFO_X + 74, ry, font, v.c_str(), 13, focused ? p.textOnAccent : p.text);
-                continue;
+                Ui::text(L.rowsX + 4, ry, tr("Scenes"), 13, labelCol);
+                Text::print(valX, ry, font, v.c_str(), 13, valueCol);
+            } else {
+                const char* label = row < 0 ? N_("Version") : row == 0 ? N_("Audio") : N_("Subtitles");
+                const char* rawTitle;
+                if (row < 0)
+                    rawTitle = detail.versions[detailVersionSel].name.c_str();
+                else if (row == 0)
+                    rawTitle = detailAudioSel < (int)detail.audioStreams.size()
+                        ? detail.audioStreams[detailAudioSel].displayTitle.c_str() : "-";
+                else
+                    rawTitle = (detailSubSel == -1)
+                        ? tr("Off")
+                        : (detailSubSel < (int)detail.subtitleStreams.size()
+                            ? detail.subtitleStreams[detailSubSel].displayTitle.c_str() : "-");
+                Ui::text(L.rowsX + 4, ry, tr(label), 13, labelCol);
+                std::string t = fitText(font, safeTitle(rawTitle, 36), 13, valW - 24);
+                char buf[96];
+                snprintf(buf, sizeof(buf), "\xe2\x80\xb9 %s \xe2\x80\xba", t.c_str());
+                Text::print(valX, ry, font, buf, 13, valueCol);
             }
-
-            int ry = STREAM_Y0 + (row + (hasVersions ? 1 : 0)) * STREAM_ROW_H;
-            bool focused = (detailFocusRow == row);
-            if (focused)
-                Ui::roundRect(INFO_X - 6, ry - 3, INFO_W - 8, STREAM_ROW_H - 3, (STREAM_ROW_H - 3) * 0.5f,
-                              Ui::mix(p.accent, 0xFFFFFFFF, 0.2f), p.accentDark);
-
-            u32 labelCol = focused ? p.textOnAccent : p.textDim;
-            u32 valueCol = focused ? p.textOnAccent : p.text;
-
-            const char* label = row < 0 ? N_("Version") : row == 0 ? N_("Audio") : N_("Subtitles");
-            const char* rawTitle;
-            if (row < 0)
-                rawTitle = detail.versions[detailVersionSel].name.c_str();
-            else if (row == 0)
-                rawTitle = detailAudioSel < (int)detail.audioStreams.size()
-                    ? detail.audioStreams[detailAudioSel].displayTitle.c_str() : "-";
-            else
-                rawTitle = (detailSubSel == -1)
-                    ? tr("Off")
-                    : (detailSubSel < (int)detail.subtitleStreams.size()
-                        ? detail.subtitleStreams[detailSubSel].displayTitle.c_str() : "-");
-            Ui::text(INFO_X + 4, ry, tr(label), 13, labelCol);
-            std::string t = safeTitle(rawTitle, 36);
-            char buf[64];
-            snprintf(buf, sizeof(buf), "\xe2\x80\xb9 %s \xe2\x80\xba", t.c_str());
-            Text::print(INFO_X + 74, ry, font, buf, 13, valueCol);
         }
+        rowsBottom = L.playY + rows.size() * ROW_STEP;
+    }
+
+    // ---- Stars, rating, year, running time (and watched, resume) ----
+    float y = L.py + L.ph;
+    if (L.favY + L.favH > y) y = L.favY + L.favH;
+    if (rowsBottom > y)      y = rowsBottom;
+    y += 12;
+    {
+        float x = MARGIN;
+        const float cy = y + 9;
+        if (detail.communityRating > 0.0f)
+            x += Ui::stars(x, cy, 9, detail.communityRating, p.accent, Ui::alpha(p.textDim, 0.3f)) + 16;
+        if (!detail.officialRating.empty()) {
+            const float bw = Ui::textWidth(detail.officialRating.c_str(), 13) + 12;
+            Ui::roundBorder(x, cy - 10, bw, 20, 3, 1.5f, p.text);
+            Ui::text(x + 6, cy - 8, detail.officialRating.c_str(), 13, p.text);
+            x += bw + 16;
+        }
+        char buf[48];
+        if (detail.year) {
+            snprintf(buf, sizeof(buf), "%d", detail.year);
+            Ui::text(x, y, buf, 15, p.text);
+            x += Ui::textWidth(buf, 15) + 16;
+        }
+        if (detail.runtimeTicks > 0) {
+            int secs = (int)(detail.runtimeTicks / 10000000LL);
+            /* TRANSLATORS: a running time in seconds (a trailer, a clip) */
+            if (secs >= 60) snprintf(buf, sizeof(buf), "%s", Lang::runTime(secs / 60).c_str());
+            else            snprintf(buf, sizeof(buf), tr("%ds"), secs);
+            Ui::text(x, y, buf, 15, p.text);
+            x += Ui::textWidth(buf, 15) + 16;
+        }
+        if (detail.played) {
+            snprintf(buf, sizeof(buf), "\xe2\x9c\x93 %s", tr("Watched"));
+            Text::print(x, y + 1, font, buf, 14, p.ok);
+            x += Text::width(font, buf, 14) + 16;
+        }
+        if (detail.playbackPositionTicks > 0 && detail.runtimeTicks > 0) {
+            int secs = (int)(detail.playbackPositionTicks / 10000000LL);
+            int h    = secs / 3600, m = (secs % 3600) / 60;
+            int pct  = (int)(detail.playbackPositionTicks * 100LL / detail.runtimeTicks);
+            /* TRANSLATORS: hours and minutes into the video, then how much of it is watched */
+            if (h > 0) snprintf(buf, sizeof(buf), tr("Resume at %dh%02d (%d%%)"), h, m, pct);
+            else       snprintf(buf, sizeof(buf), tr("Resume at %dmin (%d%%)"), m, pct);
+            Ui::text(x, y + 1, buf, 14, p.accentDark);
+        }
+    }
+    y += 28;
+
+    // ---- Overview (pre-computed lines, no per-frame width measuring) ----
+    if (!detailLines.empty()) {
+        detailOvY0 = y;
+        const bool hover = overviewCut && ir.valid && ir.x >= MARGIN && ir.x < MARGIN + pageW &&
+                           ir.y >= detailOvY0 && ir.y < detailOvY1;
+        for (const auto& line : detailLines) {
+            Ui::text(MARGIN, y, line.c_str(), (int)OV_SIZE, hover ? p.accentDark : p.text);
+            y += OV_STEP;
+        }
+        if (overviewCut) {   /* the rest of it: - (or A on the text) */
+            const Ui::Hint more = { "-", N_("Read more") };
+            Ui::hint(MARGIN + pageW - Ui::hintWidth(more) + 14, y - 1, more);
+            y += OV_STEP;
+        }
+        detailOvY1 = y;
+    }
+
+    // ---- Cast, Director, genres ----
+    {
+        std::string cast, director;
+        for (const auto& pp : detail.people) {
+            if (pp.name.empty()) continue;
+            if (pp.role != "Director" && pp.role != "Actor" && !pp.role.empty()) continue;
+            std::string& to = pp.role == "Director" ? director : cast;
+            if (!to.empty()) to += ", ";
+            to += pp.name;
+        }
+        std::string genres;
+        for (size_t i = 0; i < detail.genres.size(); i++) {
+            if (i) genres += ", ";
+            genres += detail.genres[i];
+        }
+        float cy = CREDITS_Y;
+        auto line = [&](const char* label, const std::string& v) {
+            if (v.empty()) return;
+            float x = MARGIN;
+            if (label) {
+                std::string l = std::string(tr(label)) + " ";
+                Ui::text(x, cy, l.c_str(), 14, p.textDim);
+                x += Ui::textWidth(l.c_str(), 14);
+            }
+            std::string s = fitText(font, v, 14, (int)(MARGIN + pageW - x));
+            Text::print(x, cy, font, s.c_str(), 14, p.text);
+            Text::print(x + 1, cy, font, s.c_str(), 14, p.text);   /* bolder */
+            cy += 18;
+        };
+        /* TRANSLATORS: before the actors' names on a title's page */
+        line(N_("Cast:"), cast);
+        /* TRANSLATORS: before the director's name on a title's page */
+        line(N_("Director:"), director);
+        line(nullptr, genres);
     }
 
     // ---- Footer ----
     const Ui::Hint l[] = { { "A", detailFocusRow == 2 && hasScenes ? N_("Scenes") : N_("Play") }, { "B", N_("Back") },
-                           { "1", detail.isFavorite ? N_("Unfavorite") : N_("Favorite") },
+                           { "1", N_("Queue") },   /* add / remove: the button says which */
                            { "+!", detail.played ? N_("Unwatched") : N_("Watched") },
                            { "2", N_("Extras") } };   /* short: 5 hints + Focus, Change */
     const Ui::Hint r[] = { { "UD", N_("Focus") }, { "LR", N_("Change") } };

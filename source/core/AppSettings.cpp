@@ -36,8 +36,6 @@ void App::loadSettings() {
 
         if (strcmp(key, "ssl_verify") == 0) {
             jellyfinClient.sslVerify = atoi(val) != 0;
-        } else if (strcmp(key, "music_enabled") == 0) {
-            musicEnabled = atoi(val) != 0;
         } else if (strcmp(key, "ui_sounds") == 0) {
             SoundFX::setEnabled(atoi(val) != 0);
         } else if (strcmp(key, "test_freeze_at") == 0) {
@@ -46,25 +44,12 @@ void App::loadSettings() {
             testOnboarding = atoi(val) != 0;   /* tests */
         } else if (strcmp(key, "log_sounds") == 0) {
             SoundFX::setLogging(atoi(val) != 0);   /* tests */
-        } else if (strcmp(key, "ui_theme") == 0) {
-            {
-                int t = atoi(val);
-                Ui::setTheme(t >= 0 && t < Ui::THEME_COUNT ? (Ui::Theme)t : Ui::Theme::Dark);
-                /* settings saved before home_layout existed: Flix meant rows
-                 * (home_layout, written after ui_theme, overrides this) */
-                if (Ui::theme() == Ui::Theme::Flix) Ui::setHomeLayout(Ui::HomeLayout::Rows);
-            }
         } else if (strcmp(key, "smooth_motion") == 0) {
             g_wiifin_smooth_motion = atoi(val) != 0;
         } else if (strcmp(key, "disc_light") == 0) {
             g_wiifin_disc_light = atoi(val) != 0;
         } else if (strcmp(key, "video_zoom") == 0) {
             VideoSurface::setZoom(atoi(val) == 1 ? VideoSurface::Zoom::Fill : VideoSurface::Zoom::Fit);
-        } else if (strcmp(key, "library_view") == 0) {
-            int v = atoi(val);
-            if (v >= 0 && v < Ui::LIBRARY_STYLE_COUNT) Ui::setLibraryStyle((Ui::LibraryStyle)v);
-        } else if (strcmp(key, "home_layout") == 0) {
-            Ui::setHomeLayout(atoi(val) == 1 ? Ui::HomeLayout::Rows : Ui::HomeLayout::Grid);
         } else if (strcmp(key, "language") == 0) {
             Lang::chooseKey(val);
         } else if (strcmp(key, "clock_12h") == 0) {
@@ -102,9 +87,6 @@ void App::loadSettings() {
             if (strcmp(field, "server_name")   == 0) profiles[idx].serverName  = val;
             if (strcmp(field, "user_id")       == 0) profiles[idx].userId      = val;
             if (strcmp(field, "access_token")  == 0) profiles[idx].accessToken = val;
-            if (strcmp(field, "theme")         == 0) profiles[idx].theme        = atoi(val);
-            if (strcmp(field, "home_layout")   == 0) profiles[idx].homeLayout   = atoi(val);
-            if (strcmp(field, "library_view")  == 0) profiles[idx].libraryStyle = atoi(val);
             if (strcmp(field, "solid_colors")  == 0) profiles[idx].solidColors  = atoi(val);
             if (strcmp(field, "sign_in")       == 0) profiles[idx].signIn       = atoi(val);
             if (strcmp(field, "pass_salt")     == 0) profiles[idx].passSalt     = val;
@@ -128,39 +110,24 @@ void App::loadSettings() {
     /* Migrate legacy single-profile format (no profile_count key present) */
     if (hasLegacy && profiles.empty() && !legacyProfile.accessToken.empty())
         profiles.push_back(legacyProfile);
-    startView = currentView();   /* the menus' look: ui_theme, solid_colors... */
+    startView = currentView();   /* the menus' look: solid_colors */
     SYS_Report("[Lang] %s (chosen: %s)\n", Lang::code(Lang::current()), Lang::choiceKey());
 }
 
 ViewPrefs App::currentView() const {
     ViewPrefs v;
-    v.theme        = (int)Ui::theme();
-    v.homeLayout   = (int)Ui::homeLayout();
-    v.libraryStyle = (int)Ui::libraryStyle();
-    v.solidColors  = Ui::solidColors() ? 1 : 0;
+    v.solidColors = Ui::solidColors() ? 1 : 0;
     return v;
 }
 
 void App::applyView(const ViewPrefs& v) {
-    Ui::setTheme(v.theme >= 0 && v.theme < Ui::THEME_COUNT ? (Ui::Theme)v.theme : Ui::Theme::Dark);
-    Ui::setHomeLayout(v.homeLayout == 1 ? Ui::HomeLayout::Rows : Ui::HomeLayout::Grid);
-    Ui::setLibraryStyle(v.libraryStyle >= 0 && v.libraryStyle < Ui::LIBRARY_STYLE_COUNT
-                        ? (Ui::LibraryStyle)v.libraryStyle : Ui::LibraryStyle::Posters);
     Ui::setSolidColors(v.solidColors == 1);
 }
 
 ViewPrefs App::viewOf(const SavedProfile& p) const {
     ViewPrefs v = startView;
-    if (p.theme >= 0)        v.theme        = p.theme;
-    if (p.homeLayout >= 0)   v.homeLayout   = p.homeLayout;
-    if (p.libraryStyle >= 0) v.libraryStyle = p.libraryStyle;
-    if (p.solidColors >= 0)  v.solidColors  = p.solidColors;
+    if (p.solidColors >= 0) v.solidColors = p.solidColors;
     return v;
-}
-
-void App::keepView(SavedProfile& p) {
-    const ViewPrefs v = currentView();
-    p.theme = v.theme; p.homeLayout = v.homeLayout; p.libraryStyle = v.libraryStyle; p.solidColors = v.solidColors;
 }
 
 static std::string sanitizeConfigValue(const std::string& s) {
@@ -174,13 +141,11 @@ static std::string sanitizeConfigValue(const std::string& s) {
 void App::logSettings() {
     int l, t, r, b;
     Ui::safeArea(l, t, r, b);
-    SYS_Report("[Settings] ssl %d, music %d, sounds %d, quality %s, direct %d, smooth %d, "
-               "theme %s, home %s, view %d, light %d, area %d,%d,%d,%d, solid %d, clock %s, language %s\n",
-               jellyfinClient.sslVerify, musicEnabled, SoundFX::enabled(),
+    SYS_Report("[Settings] ssl %d, sounds %d, quality %s, direct %d, smooth %d, "
+               "light %d, area %d,%d,%d,%d, solid %d, clock %s, language %s\n",
+               jellyfinClient.sslVerify, SoundFX::enabled(),
                JellyfinClient::videoQualityName(jellyfinClient.videoQuality), jellyfinClient.directPlay,
-               g_wiifin_smooth_motion, Ui::themeName(Ui::theme()),
-               Ui::homeLayout() == Ui::HomeLayout::Rows ? "rows" : "grid", (int)Ui::libraryStyle(),
-               (int)g_wiifin_disc_light, l, t, r, b, Ui::solidColors(), Ui::clock12h() ? "12h" : "24h",
+               g_wiifin_smooth_motion, (int)g_wiifin_disc_light, l, t, r, b, Ui::solidColors(), Ui::clock12h() ? "12h" : "24h",
                Lang::code(Lang::current()));
 }
 
@@ -189,14 +154,10 @@ void App::saveSettings() {
     FILE* f = fopen(settingsPath.c_str(), "w");
     if (!f) return;
     fprintf(f, "ssl_verify=%d\n",      jellyfinClient.sslVerify ? 1 : 0);
-    fprintf(f, "music_enabled=%d\n",    musicEnabled ? 1 : 0);
     fprintf(f, "ui_sounds=%d\n",        SoundFX::enabled() ? 1 : 0);
     fprintf(f, "video_quality=%d\n",    jellyfinClient.videoQuality);
     fprintf(f, "direct_play=%d\n",      jellyfinClient.directPlay ? 1 : 0);
     /* WiiFin's own look: not the one of the profile open */
-    fprintf(f, "ui_theme=%d\n",         startView.theme);
-    fprintf(f, "home_layout=%d\n",      startView.homeLayout);
-    fprintf(f, "library_view=%d\n",     startView.libraryStyle);
     fprintf(f, "solid_colors=%d\n",     startView.solidColors);
     fprintf(f, "clock_12h=%d\n",        Ui::clock12h() ? 1 : 0);
     fprintf(f, "language=%s\n",         Lang::choiceKey());
@@ -219,9 +180,6 @@ void App::saveSettings() {
         /* the password each time: no token kept */
         fprintf(f, "profile.%d.access_token=%s\n", i,
                 p.signIn == SavedProfile::Password ? "" : sanitizeConfigValue(p.accessToken).c_str());
-        if (p.theme >= 0)        fprintf(f, "profile.%d.theme=%d\n",        i, p.theme);
-        if (p.homeLayout >= 0)   fprintf(f, "profile.%d.home_layout=%d\n",  i, p.homeLayout);
-        if (p.libraryStyle >= 0) fprintf(f, "profile.%d.library_view=%d\n", i, p.libraryStyle);
         if (p.solidColors >= 0)  fprintf(f, "profile.%d.solid_colors=%d\n", i, p.solidColors);
         fprintf(f, "profile.%d.sign_in=%d\n", i, p.signIn);
         if (p.signIn == SavedProfile::Passcode) {

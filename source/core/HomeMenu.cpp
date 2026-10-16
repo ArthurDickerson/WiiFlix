@@ -18,11 +18,9 @@
  * the player stops with PLAYER_STOP_HOME) so both contexts share identical UX.
  * Returns true if the user wants to exit (Wii Menu or Reset).
  * Sets g_restartApp = true when "Reset" is chosen.
- * Pauses BGM on entry; resumes only if musicEnabled is true (pass false
- * when calling from the player, since BGM is already paused for playback).
  * ----------------------------------------------------------------------- */
 bool doShowHomeOverlay(GRRLIB_ttfFont* font, GRRLIB_texImg* btnTex,
-                       GRRLIB_texImg* cursorPointerTex, bool musicEnabled)
+                       GRRLIB_texImg* cursorPointerTex)
 {
     ir_t ir;
     ir.valid = false;
@@ -61,9 +59,6 @@ bool doShowHomeOverlay(GRRLIB_ttfFont* font, GRRLIB_texImg* btnTex,
     int prevHoverPop  = -1;
 
     SYS_Report("[WiiFin] HOME menu\n");
-    /* over a player, silent: ASND started and ended while MPlayer is
-     * paused leaves MPlayer stuck (the audio is MPlayer's, ao_gekko) */
-    MusicBGM::stopMusic();   /* its own sounds still play */
     SoundFX::play(SoundFX::FX::MenuEnter);
     /* HOME closes it too, as on the Wii: not the press that opened it */
     const u64 openedAt = ticks_to_millisecs(gettime());
@@ -84,7 +79,7 @@ bool doShowHomeOverlay(GRRLIB_ttfFont* font, GRRLIB_texImg* btnTex,
         /* ---- Input ---- */
         if (state == 0) {
             const bool home = Input::isHomePressed() && ticks_to_millisecs(gettime()) - openedAt > 300;
-            if (Input::isBPressed() || home) { if (musicEnabled) MusicBGM::resume(); return false; }
+            if (Input::isBPressed() || home) return false;
 
             if (ir.valid) {
                 for (int i = 0; i < 2; i++) {

@@ -145,13 +145,15 @@ private:
     float seekInPlaceFrom  = 0.0f;  /* MPlayer's position when it was asked */
     u64   seekInPlaceAt    = 0;
     u64   loadingSince     = 0;     /* the loading indicator went on, 0 = off */
+    u64   loadShownSince   = 0;     /* the "Retrieving" screen went on, 0 = off */
+    float loadShown        = 0.0f;  /* its bar, 0..1 (never goes back) */
     Action injected     = Action::None;   /* remoteTrack */
     bool  seekPending   = false;
     float seekPendingTo = 0.0f;
     u64   seekCommitAt  = 0;
 
     /* Hit-testing results for the current frame */
-    int   hoverButton = -1;    /* 0..4 = transport buttons, 5 = zoom */
+    int   hoverButton = -1;    /* 0..4 = transport, 5 = zoom, 6 = back */
     bool  hoverBar    = false;
     int   hoverRow    = -1;    /* panel row */
     int   prevHoverRow = -1;   /* hover only moves the selection when it changes */

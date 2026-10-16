@@ -12,23 +12,36 @@
 #include <math.h>
 #include <stdio.h>
 
-/* ---- Layout (640x480 virtual screen) ---------------------------------- */
-static const int TOP_H      = 52;
-static const int PANEL_Y    = 368;              /* bottom control panel   */
-static const int BAR_X      = 32, BAR_W = 576;
-static const int BAR_Y      = 390, BAR_H = 6;
-static const int TIME_Y     = 402;
-static const int BTN_Y      = 428, BTN_H = 38;
-static const int BTN_W      = 84,  BTN_GAP = 12;
-static const int BTN_COUNT  = 5;
-static const int BTN_X0     = (640 - (BTN_COUNT * BTN_W + (BTN_COUNT - 1) * BTN_GAP)) / 2;
-/* Zoom button (Fit / Fill), alone at the right end of the transport row */
-static const int BTN_ZOOM   = BTN_COUNT, ZOOM_W = 48;
-static float zoomX() { return Ui::screenRight() - 24 - ZOOM_W; }
-static const int INTRO_X    = 466, INTRO_Y = 312, INTRO_W = 150, INTRO_H = 40;
+/* ---- Layout (640x480 virtual screen) ----------------------------------
+ * The old video channels' playback screen: over the picture, a track
+ * between two arrowheads with an orange knob on it, the time played and
+ * the running time in pills under it with pause between them, and a round
+ * back button top right. */
+static const int   TOP_H    = 52;                 /* title area (toasts go under) */
+static const float BAR_Y    = 344;                /* the track's centre line      */
+static const float ARROW_X  = 34, ARROW_W = 26, ARROW_H = 36;
+static const float KNOB_R   = 15;
+static const float ROW_Y    = 396;                /* pills, pause...: centre line */
+static const float PILL_W   = 104, PILL_H = 30, PILL_DX = 130;
+static const float SIDE_DX  = 50;                 /* |<< and >>| beside pause     */
+static const float BACK_R   = 22, BACK_CY = 40;
+/* hoverButton: 0 |<<, 1 back 10 s (left arrow), 2 pause, 3 on 10 s (right
+ * arrow), 4 >>|, then zoom and the back button */
+static const int   BTN_ZOOM = 5, BTN_EXIT = 6;
+static float arrowX(int dir) { return dir < 0 ? Ui::screenLeft() + ARROW_X : Ui::screenRight() - ARROW_X; }
+static float trackL() { return arrowX(-1) + ARROW_W * 0.5f + 20; }
+static float trackR() { return arrowX(+1) - ARROW_W * 0.5f - 20; }
+static float zoomCx() { return Ui::screenRight() - 48; }
+static float backCx() { return Ui::screenRight() - 40; }
+static const int INTRO_X    = 466, INTRO_Y = 270, INTRO_W = 150, INTRO_H = 40;
 static const int LIST_X     = 150, LIST_W  = 340;
 static const int LIST_Y     = 112, ROW_H   = 34;
 static const int LIST_ROWS  = 7;
+
+/* MPlayer's cache (cache2.c): % ahead, -1 once the whole stream is in.
+ * Playback starts at -cache-min (WiiPlayer.cpp: 8). */
+extern "C" float cache_fill_status;
+static const float CACHE_START = 8.0f;
 
 static u64 nowMs() { return ticks_to_millisecs(gettime()); }
 
@@ -45,6 +58,21 @@ static std::string fmtTime(float secs)
 static bool inRect(const ir_t& ir, int x, int y, int w, int h)
 {
     return ir.valid && ir.x >= x && ir.x < x + w && ir.y >= y && ir.y < y + h;
+}
+
+static bool nearBox(const ir_t& ir, float cx, float cy, float hw, float hh)
+{
+    return ir.valid && fabsf(ir.x - cx) < hw && fabsf(ir.y - cy) < hh;
+}
+
+/* A time as the pills show it: 1h 38m */
+static std::string fmtHm(float secs)
+{
+    if (secs < 0.0f) secs = 0.0f;
+    int m = (int)secs / 60;
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%dh %02dm", m / 60, m % 60);
+    return buf;
 }
 
 static std::string streamLabel(const MediaStream& s, int n)
@@ -320,11 +348,20 @@ void PlayerView::hitTest(const ir_t& ir)
     }
     /* still on screen while they fade out: still clickable */
     if (!controlsVisible() && controlsAlpha < 0.3f) return;
-    hoverBar = inRect(ir, BAR_X - 8, BAR_Y - 12, BAR_W + 16, BAR_H + 24);
-    for (int i = 0; i < BTN_COUNT; ++i)
-        if (inRect(ir, BTN_X0 + i * (BTN_W + BTN_GAP), BTN_Y, BTN_W, BTN_H))
-            hoverButton = i;
-    if (inRect(ir, zoomX(), BTN_Y, ZOOM_W, BTN_H)) hoverButton = BTN_ZOOM;
+    const bool chapters = ctx.chapters.size() >= 2;
+    const bool hasNext  = ctx.episodeIdx + 1 < (int)ctx.episodes.size() || chapters;
+    const bool hasPrev  = (!ctx.episodes.empty() && ctx.episodeIdx > 0) || chapters;
+    hoverBar = ir.valid && ir.x >= trackL() - 6 && ir.x <= trackR() + 6 && fabsf(ir.y - BAR_Y) < 14;
+    if (hasPrev && nearBox(ir, 320 - SIDE_DX, ROW_Y, 18, 20))                    hoverButton = 0;
+    if (nearBox(ir, arrowX(-1), BAR_Y, ARROW_W * 0.5f + 8, ARROW_H * 0.5f + 4))  hoverButton = 1;
+    if (nearBox(ir, 320, ROW_Y, 24, 24))                                         hoverButton = 2;
+    if (nearBox(ir, arrowX(+1), BAR_Y, ARROW_W * 0.5f + 8, ARROW_H * 0.5f + 4))  hoverButton = 3;
+    if (hasNext && nearBox(ir, 320 + SIDE_DX, ROW_Y, 18, 20))                    hoverButton = 4;
+    if (nearBox(ir, zoomCx(), ROW_Y, 22, 20))                                    hoverButton = BTN_ZOOM;
+    if (ir.valid) {
+        const float dx = ir.x - backCx(), dy = ir.y - BACK_CY;
+        if (dx * dx + dy * dy < (BACK_R + 4) * (BACK_R + 4)) hoverButton = BTN_EXIT;
+    }
 }
 
 void PlayerView::toggleZoom()
@@ -428,7 +465,7 @@ PlayerView::Action PlayerView::update(u32 down, const ir_t& ir)
                 act = Action::SeekTo;
             }
         } else if (visible && hoverBar && duration() > 0.0f) {
-            float frac = (ir.x - BAR_X) / (float)BAR_W;
+            float frac = (ir.x - trackL()) / (trackR() - trackL());
             if (frac < 0.0f) frac = 0.0f;
             if (frac > 1.0f) frac = 1.0f;
             seekInFlight = true;
@@ -448,6 +485,7 @@ PlayerView::Action PlayerView::update(u32 down, const ir_t& ir)
                 if (hasNext) act = Action::Next; else toast(tr("No next episode"));
                 break;
             case BTN_ZOOM: toggleZoom(); break;
+            case BTN_EXIT: act = Action::Back; break;
             }
         } else {
             wii_player_pause_toggle();
@@ -539,10 +577,10 @@ void PlayerView::render(const ir_t& ir)
     if (controlsAlpha > 0.99f) controlsAlpha = 1.0f;
     const float k = controlsAlpha;
 
-    /* Subtitles: at the bottom, lifted over the control panel when it shows */
+    /* Subtitles: at the bottom, lifted over the track when it shows */
     if (subtitles && !subtitles->empty()) {
         const float e = 1 - (1 - k) * (1 - k);
-        drawSubtitle(452.0f + (PANEL_Y - 12.0f - 452.0f) * e);
+        drawSubtitle(452.0f + (BAR_Y - KNOB_R - 14.0f - 452.0f) * e);
     }
 
     /* ---- Loading / busy ---- */
@@ -552,7 +590,32 @@ void PlayerView::render(const ir_t& ir)
     if (!g_wiifin_loading_active) loadingSince = 0;
     else if (!loadingSince)       loadingSince = nowMs();
     const bool loadingLong = g_wiifin_loading_active && nowMs() - loadingSince > 250;
-    if (!busyMsg.empty() || loadingLong || !hasVideo || stalled) {
+    if (!hasVideo) {
+        /* before the first picture (the stream asked for, then MPlayer
+         * filling its cache): the title, the spinner, then "Retrieving" and
+         * a bar of how far the cache is towards the start (it creeps on its
+         * own while the server is still answering) */
+        const u64 now = nowMs();
+        if (!loadShownSince) { loadShownSince = now; loadShown = 0.0f; }
+        float want = rebufPercent >= 0         ? rebufPercent / 100.0f
+                   : !busyMsg.empty()           ? 0.0f     /* MPlayer not started */
+                   : cache_fill_status < 0.0f   ? 1.0f
+                   : cache_fill_status / CACHE_START;
+        const float creep = (float)(now - loadShownSince) / 40000.0f;
+        if (want < creep) want = creep;
+        if (want > 0.97f) want = 0.97f;
+        if (want > loadShown) loadShown += (want - loadShown) * 0.15f;
+
+        Ui::textCentered(320, 136, fitText(ctx.title, 20, 560).c_str(), 20, 0xFFFFFFFF);
+        drawSpinner(320.0f, 212.0f);
+        const char* label = tr("Retrieving");
+        const float BW = 200, BH = 12, lw = (float)Ui::textWidth(label, 16);
+        const float x0 = 320 - (lw + 10 + BW) * 0.5f, by = 300, bx = x0 + lw + 10;
+        Ui::text(x0, by - 10, label, 16, 0xFFFFFFFF);
+        Ui::roundRect(bx, by - BH * 0.5f, BW, BH, 1, 0x6E6E78FF, 0x5A5A64FF);
+        if (loadShown > 0.0f)
+            Ui::roundRect(bx, by - BH * 0.5f, BW * loadShown, BH, 1, Ui::RED, Ui::RED);
+    } else if (!busyMsg.empty() || loadingLong || !hasVideo || stalled) {
         if (hasVideo) GRRLIB_Rectangle(Ui::screenLeft(), 0, Ui::screenWidth(), 480, 0x00000099, 1);
         drawSpinner(320.0f, 220.0f);
         char msg[128];
@@ -562,140 +625,147 @@ void PlayerView::render(const ir_t& ir)
         else                        snprintf(msg, sizeof(msg), "%s", tr("Loading..."));
         messagePill(300, msg, 16);
     }
+    if (hasVideo) loadShownSince = 0;
 
     /* ---- Controls ---- */
     if (k > 0.0f) {
         const float ease = 1.0f - (1.0f - k) * (1.0f - k);
+        const u32 white = 0xFFFFFFFF, hot = Ui::HOVER_TOP, shade = 0x00000090;
 
-        /* Top bar: title + button hints */
-        Ui::pushOffset(0, -(1.0f - ease) * (TOP_H + 14));
-        Ui::shadow(Ui::screenLeft() - 20, -30, Ui::screenWidth() + 40, TOP_H + 30, 22, 8.0f, p.shadow);
-        Ui::roundRect(Ui::screenLeft() - 20, -30, Ui::screenWidth() + 40, TOP_H + 30, 22, p.barTop, p.barBottom);
-        Ui::roundBorder(Ui::screenLeft() - 20, -30, Ui::screenWidth() + 40, TOP_H + 30, 22, 1.5f, p.barBorder);
+        /* Top: the title on a soft shade, the round back button */
+        Ui::pushOffset(0, -(1.0f - ease) * (TOP_H + 30));
+        Ui::roundRect(Ui::screenLeft(), 0, Ui::screenWidth(), 76, 0, 0x000000A0, 0x00000000);
         {
-            /* zoom has a button on the Classic (ZR) and GameCube (Z) only */
-            const Ui::ButtonStyle bs = Ui::buttonStyle();
-            const Ui::Hint all[] = { { bs == Ui::ButtonStyle::GameCube ? "Z" : "ZR", N_("Zoom") },
-                                     { "1", N_("Audio") }, { "2", N_("Subtitles") }, { "B", N_("Back") } };
-            const Ui::Hint* hints = bs == Ui::ButtonStyle::WiiRemote ? all + 1 : all;
-            const int nHints = bs == Ui::ButtonStyle::WiiRemote ? 3 : 4;
-            float hw = 0;
-            for (int i = 0; i < nHints; ++i) hw += Ui::hintWidth(hints[i]);
-            float hx = 626 - hw;
-            Ui::text(24, 15, fitText(ctx.title, 20, (int)hx - 40).c_str(), 20, p.text);
-            for (int i = 0; i < nHints; ++i) hx += Ui::hint(hx, 16, hints[i]);
+            std::string t = fitText(ctx.title, 20, (int)(backCx() - BACK_R - 40));
+            Ui::text(25, 17, t.c_str(), 20, shade);
+            Ui::text(24, 16, t.c_str(), 20, white);
         }
+        Ui::backButton(backCx(), BACK_CY, BACK_R, hoverButton == BTN_EXIT);
         Ui::popOffset();
 
-        /* Bottom panel */
-        Ui::pushOffset(0, (1.0f - ease) * (480 - PANEL_Y + 14));
-        Ui::shadow(Ui::screenLeft() - 20, PANEL_Y, Ui::screenWidth() + 40, 140, 22, 8.0f, p.shadow);
-        Ui::roundRect(Ui::screenLeft() - 20, PANEL_Y, Ui::screenWidth() + 40, 140, 22, p.barTop, p.barBottom);
-        Ui::roundBorder(Ui::screenLeft() - 20, PANEL_Y, Ui::screenWidth() + 40, 140, 22, 1.5f, p.barBorder);
+        /* Bottom: the track, its arrows and knob; pills, pause */
+        Ui::pushOffset(0, (1.0f - ease) * (480 - BAR_Y + 30));
+        Ui::roundRect(Ui::screenLeft(), 290, Ui::screenWidth(), 190, 0, 0x00000000, 0x000000B0);
 
         float dur = duration();
         float pos = displayPosition();
         float frac = dur > 0.0f ? pos / dur : 0.0f;
         if (frac > 1.0f) frac = 1.0f;
         if (frac < 0.0f) frac = 0.0f;
-        float barH = hoverBar ? BAR_H + 4 : BAR_H;
-        float barY = BAR_Y - (barH - BAR_H) / 2;
-        Ui::roundRect(BAR_X, barY, BAR_W, barH, barH / 2, Ui::alpha(p.cardBorder, 0.6f));
+        const float tl = trackL(), tr_ = trackR(), tw = tr_ - tl;
+
+        Ui::arrowHead(arrowX(-1), BAR_Y, -1, ARROW_W, ARROW_H, true, hoverButton == 1);
+        Ui::arrowHead(arrowX(+1), BAR_Y, +1, ARROW_W, ARROW_H, true, hoverButton == 3);
+        /* dotted ends between the arrows and the track */
+        for (float x = arrowX(-1) + ARROW_W * 0.5f + 8; x < tl - 4; x += 7) Ui::circle(x, BAR_Y, 1.5f, 0xFFFFFF90);
+        for (float x = tr_ + 7; x < arrowX(+1) - ARROW_W * 0.5f - 4; x += 7) Ui::circle(x, BAR_Y, 1.5f, 0xFFFFFF90);
+        const float th = hoverBar ? 5.0f : 3.0f;
+        Ui::roundRect(tl, BAR_Y - th * 0.5f, tw, th, th * 0.5f, 0xC9D9E6B0, 0xC9D9E6B0);
         if (frac > 0.0f)
-            Ui::roundRect(BAR_X, barY, BAR_W * frac < barH ? barH : BAR_W * frac, barH, barH / 2,
-                          Ui::mix(p.accent, 0xFFFFFFFF, 0.2f), p.accent);
-        {
-            float kx = BAR_X + BAR_W * frac, ky = BAR_Y + BAR_H / 2.0f, kr = hoverBar ? 9.0f : 7.0f;
-            Ui::shadow(kx - kr, ky - kr + 1, kr * 2, kr * 2, kr, 4.0f, p.shadow);
-            Ui::circle(kx, ky, kr, p.cardTop);
-            Ui::roundBorder(kx - kr, ky - kr, kr * 2, kr * 2, kr, 2.0f, p.accent);
-        }
-        /* Where a seek would land: under the pointer on the bar, or the
+            Ui::roundRect(tl, BAR_Y - th * 0.5f, tw * frac < th ? th : tw * frac, th, th * 0.5f, white, white);
+
+        /* Where a seek would land: under the pointer on the track, or the
          * target of the -10s / +10s presses still to be played.  Its time
          * in a bubble, with the trickplay thumbnail above when there is one. */
         float previewAt = -1.0f, px = 0.0f;
         if (hoverBar && dur > 0.0f) {
-            float f = (ir.x - BAR_X) / (float)BAR_W;
+            float f = (ir.x - tl) / tw;
             if (f < 0.0f) f = 0.0f;
             if (f > 1.0f) f = 1.0f;
             previewAt = f * dur;
             px = ir.x;
         } else if ((seekPending || seekInFlight) && dur > 0.0f) {
             previewAt = pos;
-            px = BAR_X + BAR_W * frac;
+            px = tl + tw * frac;
         }
         /* asked for whenever the controls show, so the tile is there by the
          * time the user seeks */
         GRRLIB_texImg* thumb = trickplay ? trickplay->thumbnail(previewAt >= 0.0f ? previewAt : pos, previewAt >= 0.0f)
                                          : nullptr;
+
+        /* the orange knob, with its two little arrows */
+        {
+            const float kx = tl + tw * frac, kr = KNOB_R + (hoverBar ? 2.0f : 0.0f);
+            Ui::shadow(kx - kr, BAR_Y - kr + 2, kr * 2, kr * 2, kr, 5.0f, 0x00000080);
+            Ui::circle(kx, BAR_Y, kr, 0xE2660EFF);
+            Ui::circle(kx, BAR_Y - 1.5f, kr - 2.5f, 0xF5882AFF);
+            Ui::roundBorder(kx - kr, BAR_Y - kr, kr * 2, kr * 2, kr, 1.5f, 0xFFFFFFB0);
+            const float a = kr * 0.32f;
+            Ui::triangle(kx - kr * 0.68f, BAR_Y, kx - kr * 0.18f, BAR_Y - a, kx - kr * 0.18f, BAR_Y + a, white);
+            Ui::triangle(kx + kr * 0.68f, BAR_Y, kx + kr * 0.18f, BAR_Y + a, kx + kr * 0.18f, BAR_Y - a, white);
+        }
+
         if (previewAt >= 0.0f) {
             std::string t = fmtTime(previewAt);
             int w = Ui::textWidth(t.c_str(), 14) + 20;
+            const float by = BAR_Y - KNOB_R - 34;
             if (thumb) {
-                const float TW = 160.0f, sc = TW / thumb->w, th = thumb->h * sc;
-                float tx = px - TW / 2, ty = BAR_Y - 40 - th;
+                const float TW = 160.0f, sc = TW / thumb->w, tH = thumb->h * sc;
+                float tx = px - TW / 2, ty = by - 8 - tH;
                 if (tx < Ui::screenLeft() + 8)        tx = Ui::screenLeft() + 8;
                 if (tx > Ui::screenRight() - 8 - TW)  tx = Ui::screenRight() - 8 - TW;
-                Ui::shadow(tx - 3, ty - 3, TW + 6, th + 6, 6, 6.0f, p.shadow);
-                Ui::roundRect(tx - 3, ty - 3, TW + 6, th + 6, 6, p.accentDark);
+                Ui::shadow(tx - 3, ty - 3, TW + 6, tH + 6, 6, 6.0f, 0x00000080);
+                Ui::roundRect(tx - 3, ty - 3, TW + 6, tH + 6, 6, 0xE2660EFF, 0xE2660EFF);
                 GRRLIB_DrawImg(tx, ty, thumb, 0, sc, sc, 0xFFFFFFFF);
             }
-            Ui::roundRect(px - w / 2, BAR_Y - 34, w, 22, 11, p.accent, p.accentDark);
-            Ui::triangle(px - 5, BAR_Y - 12, px + 5, BAR_Y - 12, px, BAR_Y - 7, p.accentDark);
-            Ui::textCentered(px, BAR_Y - 31, t.c_str(), 14, p.textOnAccent);
+            Ui::roundRect(px - w / 2, by, w, 22, 11, 0xF7922EFF, 0xE2660EFF);
+            Ui::triangle(px - 5, by + 22, px + 5, by + 22, px, by + 27, 0xE2660EFF);
+            Ui::textCentered(px, by + 3, t.c_str(), 14, white);
         }
-        Ui::text(BAR_X, TIME_Y, fmtTime(pos).c_str(), 15, p.text);
-        Ui::textRight(BAR_X + BAR_W, TIME_Y, dur > 0.0f ? fmtTime(dur).c_str() : "--:--", 15, p.textDim);
 
-        /* Transport buttons */
-        const bool hasNext = ctx.episodeIdx + 1 < (int)ctx.episodes.size();
-        const bool hasPrev = !ctx.episodes.empty() && ctx.episodeIdx > 0;
-        /* |< and >| go from chapter to chapter first */
-        const bool chapters = ctx.chapters.size() >= 2;
-        const bool enabled[BTN_COUNT] = { hasPrev || chapters, true, true, true, hasNext || chapters };
-        for (int i = 0; i < BTN_COUNT; ++i) {
-            float x = BTN_X0 + i * (BTN_W + BTN_GAP);
-            float f = (hoverButton == i && enabled[i]) ? Ui::pulse() : 0.0f;
-            Ui::button(x, BTN_Y, BTN_W, BTN_H, "", 15, f);
-            u32 c = enabled[i] ? Ui::mix(p.text, p.accentDark, f) : Ui::alpha(p.textDim, 0.45f);
-            float cx = x + BTN_W * 0.5f, cy = BTN_Y + BTN_H * 0.5f;
-            switch (i) {
-            case 0:   /* previous episode |<< */
-                Ui::roundRect(cx - 13, cy - 8, 3, 16, 1.5f, c);
-                Ui::triangle(cx - 10, cy, cx, cy - 8, cx, cy + 8, c);
-                Ui::triangle(cx, cy, cx + 10, cy - 8, cx + 10, cy + 8, c);
-                break;
-            case 4:   /* next episode >>| */
-                Ui::triangle(cx - 10, cy - 8, cx, cy, cx - 10, cy + 8, c);
-                Ui::triangle(cx, cy - 8, cx + 10, cy, cx, cy + 8, c);
-                Ui::roundRect(cx + 10, cy - 8, 3, 16, 1.5f, c);
-                break;
-            case 2:
-                if (g_mplayer_paused) {
-                    Ui::triangle(cx - 6, cy - 10, cx + 10, cy, cx - 6, cy + 10, c);
-                } else {
-                    Ui::roundRect(cx - 8, cy - 9, 6, 18, 2, c);
-                    Ui::roundRect(cx + 2, cy - 9, 6, 18, 2, c);
-                }
-                break;
-            default:
-                Ui::textCentered(cx, cy - 9, i == 1 ? "-10s" : "+10s", 16, c);
-                break;
+        /* the time played and the running time, in light blue pills */
+        auto pill = [&](float cx, const std::string& s) {
+            const float x = cx - PILL_W * 0.5f, y = ROW_Y - PILL_H * 0.5f;
+            Ui::shadow(x, y + 2, PILL_W, PILL_H, PILL_H * 0.5f, 5.0f, 0x00000080);
+            Ui::roundRect(x, y, PILL_W, PILL_H, PILL_H * 0.5f, 0xF4FAFFFF, 0xBCDCF0FF);
+            Ui::roundBorder(x, y, PILL_W, PILL_H, PILL_H * 0.5f, 1.0f, 0x7FA9C6FF);
+            Ui::textCentered(cx, ROW_Y - 10, s.c_str(), 17, 0x2B2B2BFF);
+        };
+        pill(320 - PILL_DX, fmtHm(pos));
+        pill(320 + PILL_DX, dur > 0.0f ? fmtHm(dur) : "--");
+
+        /* pause (or play), and |<< >>| beside it when there is somewhere to go */
+        {
+            const u32 c = hoverButton == 2 ? hot : white;
+            const float g = hoverButton == 2 ? Ui::HOVER_GROW : 1.0f, cy = ROW_Y;
+            if (g_mplayer_paused) {
+                Ui::triangle(320 - 8 * g + 1, cy - 15 * g + 2, 320 + 14 * g + 1, cy + 2, 320 - 8 * g + 1, cy + 15 * g + 2, shade);
+                Ui::triangle(320 - 8 * g, cy - 15 * g, 320 + 14 * g, cy, 320 - 8 * g, cy + 15 * g, c);
+            } else {
+                Ui::roundRect(320 - 11 * g + 1, cy - 15 * g + 2, 8 * g, 30 * g, 2, shade, shade);
+                Ui::roundRect(320 + 3 * g + 1,  cy - 15 * g + 2, 8 * g, 30 * g, 2, shade, shade);
+                Ui::roundRect(320 - 11 * g, cy - 15 * g, 8 * g, 30 * g, 2, c, c);
+                Ui::roundRect(320 + 3 * g,  cy - 15 * g, 8 * g, 30 * g, 2, c, c);
             }
+        }
+        const bool chapters = ctx.chapters.size() >= 2;
+        const bool hasNext  = ctx.episodeIdx + 1 < (int)ctx.episodes.size() || chapters;
+        const bool hasPrev  = (!ctx.episodes.empty() && ctx.episodeIdx > 0) || chapters;
+        /* the icons under the pointer: orange, a little bigger */
+        if (hasPrev) {   /* |<< */
+            const float cx = 320 - SIDE_DX, cy = ROW_Y, g = hoverButton == 0 ? Ui::HOVER_GROW : 1.0f;
+            const u32 c = hoverButton == 0 ? hot : white;
+            Ui::roundRect(cx - 12 * g, cy - 8 * g, 3 * g, 16 * g, 1.5f, c, c);
+            Ui::triangle(cx - 9 * g, cy, cx + 1 * g, cy - 8 * g, cx + 1 * g, cy + 8 * g, c);
+            Ui::triangle(cx + 1 * g, cy, cx + 11 * g, cy - 8 * g, cx + 11 * g, cy + 8 * g, c);
+        }
+        if (hasNext) {   /* >>| */
+            const float cx = 320 + SIDE_DX, cy = ROW_Y, g = hoverButton == 4 ? Ui::HOVER_GROW : 1.0f;
+            const u32 c = hoverButton == 4 ? hot : white;
+            Ui::triangle(cx - 11 * g, cy - 8 * g, cx - 1 * g, cy, cx - 11 * g, cy + 8 * g, c);
+            Ui::triangle(cx - 1 * g, cy - 8 * g, cx + 9 * g, cy, cx - 1 * g, cy + 8 * g, c);
+            Ui::roundRect(cx + 9 * g, cy - 8 * g, 3 * g, 16 * g, 1.5f, c, c);
         }
         {
             /* zoom: a small screen showing the current mode (picture with
              * bars, or picture filling it) */
-            float x = zoomX();
-            float f = hoverButton == BTN_ZOOM ? Ui::pulse() : 0.0f;
-            Ui::button(x, BTN_Y, ZOOM_W, BTN_H, "", 15, f);
-            u32 c = Ui::mix(p.text, p.accentDark, f);
-            float cx = x + ZOOM_W * 0.5f, cy = BTN_Y + BTN_H * 0.5f;
-            Ui::roundBorder(cx - 13, cy - 9, 26, 18, 3, 2.0f, c);
+            const u32 c = hoverButton == BTN_ZOOM ? hot : white;
+            const float cx = zoomCx(), cy = ROW_Y, g = hoverButton == BTN_ZOOM ? Ui::HOVER_GROW : 1.0f;
+            Ui::roundBorder(cx - 13 * g, cy - 9 * g, 26 * g, 18 * g, 3, 2.0f, c);
             if (VideoSurface::zoom() == VideoSurface::Zoom::Fill)
-                Ui::roundRect(cx - 9.5f, cy - 5.5f, 19, 11, 1.5f, c);
+                Ui::roundRect(cx - 9.5f * g, cy - 5.5f * g, 19 * g, 11 * g, 1.5f, c, c);
             else
-                Ui::roundRect(cx - 9.5f, cy - 3, 19, 6, 1, c);
+                Ui::roundRect(cx - 9.5f * g, cy - 3 * g, 19 * g, 6 * g, 1, c, c);
         }
         Ui::popOffset();
     }

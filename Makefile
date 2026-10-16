@@ -47,7 +47,6 @@ ASSET_OFILES := \
 	$(BUILD)/cursor_hand_closed_png.o \
 	$(BUILD)/ring_png.o \
 	$(BUILD)/cacert_pem.o \
-	$(BUILD)/music_mp3.o \
 	$(BUILD)/fx_start_mp3.o \
 	$(BUILD)/fx_select_mp3.o \
 	$(BUILD)/fx_press_key_mp3.o \
@@ -172,10 +171,6 @@ $(BUILD)/cacert_pem.o: data/certs/cacert.pem
 	xxd -i $(BUILD)/cacert_pem_null.pem > $(BUILD)/cacert_pem.h
 	sed -i 's/build_cacert_pem_null_pem/data_cacert_pem/g' $(BUILD)/cacert_pem.h
 	$(CC) -x c -c -o $@ -I$(BUILD) $(BUILD)/cacert_pem.h
-
-$(BUILD)/music_mp3.o: data/sounds/bgm.mp3
-	xxd -i -n data_music_mp3 $< > $(BUILD)/music_mp3.h
-	$(CC) -x c -c -o $@ $(BUILD)/music_mp3.h
 
 # FX sound effects — use xxd -n to give clean variable names
 $(BUILD)/fx_start_mp3.o: data/sounds/start.mp3

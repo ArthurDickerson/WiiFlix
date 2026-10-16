@@ -177,7 +177,7 @@ void drawLibHeader(const std::string& libName, const char* const* tabNames,
     headerLine(46);
 }
 
-const char* const kMovieTabs[4] = { N_("Movies"), N_("Collections"), N_("Favorites"), N_("Suggestions") };
+const char* const kMovieTabs[4] = { N_("Movies"), N_("Collections"), N_("Queue"), N_("Suggestions") };
 const char* const kTvTabs[3]    = { N_("Series"), N_("Suggestions"), N_("Coming Up") };
 const char* const kMusicTabs[5] = { N_("Albums"), N_("Suggestions"), N_("Artists"), N_("Playlists"), N_("Songs") };
 const char* const kHomeTabs[3]  = { N_("Libraries"), N_("Activity"), N_("Favorites") };

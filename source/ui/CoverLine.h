@@ -11,17 +11,20 @@
  * CoverLine — WiiFlix's home screen.
  *
  * One row of cover art at a time, as a long line: the selected cover sits
- * large in the middle, its neighbours smaller on both sides.
+ * large in the middle, its neighbours smaller on both sides.  Above it,
+ * the row's name in a long bar and a ▼▲ pill (the pointer's way to change
+ * rows); under it the scrub bar, then the selected title and its details.
  *
  *   Left / Right     previous / next cover (repeats while held)
- *   Up / Down        previous / next row
+ *   Up / Down        previous / next row (▲ / ▼ on screen)
  *   A                open the selected cover (pointer: a side cover is
  *                    selected first, A on the middle one opens it)
  *   1                search        +   browse (libraries, A-Z)
  *   2                profiles
  *
- * Rows: "Continue Watching" first (the default view), then one row per
- * genre of the server's movies and TV shows.  Only Continue Watching and
+ * Rows: "Continue Watching" first (the default view), "Instant Queue" (the
+ * titles favourited in Jellyfin: "Add to Queue"), then one row per genre
+ * of the server's movies and TV shows.  Only Continue Watching and
  * the list of genres are fetched up front; a genre row's titles are
  * fetched by the background thread when the row is first shown (and the
  * rows next to it, ahead of time).
@@ -71,7 +74,8 @@ private:
 
     struct Row {
         std::string                 title;
-        std::string                 genreId;      /* empty: Continue Watching   */
+        std::string                 genreId;      /* a genre's row               */
+        bool                        queue = false;   /* Instant Queue: favourites */
         std::vector<JellyfinItem>   items;        /* touched only when READY    */
         std::vector<GRRLIB_texImg*> tex;
         std::vector<unsigned char>  st;           /* TileState                  */
@@ -118,6 +122,8 @@ private:
 
     /* main thread */
     void freeTextures(Row& r);
+    /* fetched by the loader when first shown (Continue Watching: at once) */
+    static bool lazy(const Row& r) { return r.queue || !r.genreId.empty(); }
     void evictFar();
     bool rowReady(int r) const;
     void moveRow(int delta);

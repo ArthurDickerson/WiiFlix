@@ -17,8 +17,8 @@
  * ----------------------------------------------------------------------- */
 namespace Ui {
 
-/* Light: Wii Menu.  Dark: Wii at night.  Flix: charcoal and red, with the
- * row-of-carousels home screen of the old Wii video channels.  Luhu: black,
+/* Light: Wii Menu.  Dark: Wii at night.  Flix: light grey under a red
+ * band, like the old Wii video channels (WiiFlix's only look).  Luhu: black,
  * silver and green; Sushi: dark grey and orange (two more of those
  * channels' colours). */
 enum class Theme { Light = 0, Dark = 1, Flix = 2, Luhu = 3, Sushi = 4 };
@@ -36,10 +36,7 @@ struct Palette {
     u32 dim;                              /* modal backdrop                   */
 };
 
-void        setTheme(Theme t);
-Theme       nextTheme(Theme t);
-Theme       theme();
-const char* themeName(Theme t);
+Theme       theme();             /* WiiFlix: always Flix */
 const Palette& pal();
 /* Solid colours instead of gradients (no banding on 480i TVs) */
 void setSolidColors(bool on);
@@ -48,21 +45,13 @@ bool solidColors();
 void setClock12h(bool on);
 bool clock12h();
 
-/* Home screen layout: tile grid of libraries, or rows of poster carousels
- * (independent of the theme; picking the Flix theme switches to Rows). */
-enum class HomeLayout { Grid = 0, Rows = 1 };
-void       setHomeLayout(HomeLayout l);
-HomeLayout homeLayout();
-
-/* How libraries are browsed.
- *   Posters    poster grids, carousel with artwork (default)
+/* How libraries are browsed.  WiiFlix always uses ListCover (no setting):
+ *   Posters    poster grids, carousel with artwork
  *   List       libraries open as text lists instead of poster grids (no
  *              artwork in the list; home, carousel and detail pages keep
  *              theirs)
  *   ListCover  text lists with the selected title's cover beside them */
 enum class LibraryStyle { Posters = 0, List = 1, ListCover = 2 };
-static const int LIBRARY_STYLE_COUNT = 3;
-void         setLibraryStyle(LibraryStyle s);
 LibraryStyle libraryStyle();
 inline bool  listMode() { return libraryStyle() != LibraryStyle::Posters; }
 
@@ -112,8 +101,18 @@ float headerBand();
 void drawHeaderBand();
 /* Card / channel tile.  focus 0..1 fades in the blue border and halo. */
 void card(float x, float y, float w, float h, float r, float focus);
-/* Pill button with centred label. */
-void button(float x, float y, float w, float h, const char* label, int size, float focus);
+/* What the pointer is on (and the D-pad's choice): orange, a little bigger
+ * (every button, arrow and key) */
+/* WiiFlix's one red: the band, stars, bars, accents */
+static const u32   RED = 0xE50914FF;
+static const u32   HOVER_TOP = 0xF7922EFF, HOVER_BOTTOM = 0xE2660EFF, HOVER_EDGE = 0xB9500AFF;
+static const float HOVER_GROW = 1.07f;
+/* Scale a w x h box at (x, y) about its centre by `by`. */
+void grow(float& x, float& y, float& w, float& h, float by);
+/* Button with centred label: a pill, or corners of `radius` when given.
+ * focus 0..1: orange and grown that much. */
+void button(float x, float y, float w, float h, const char* label, int size, float focus,
+            float radius = -1.0f);
 /* Title at the top left with a thin separator. */
 void header(const char* title, const char* subtitle = nullptr);
 /* A message (the server's "Send message"): a card at the top of whatever
@@ -153,6 +152,16 @@ int tabAt(float x, float y);
 void arrowButton(float cx, float cy, bool up, bool enabled, bool hover);
 /* Bigger left/right arrow at a screen edge to turn pages (Wii Settings style). */
 void pageArrow(float cx, float cy, bool left, bool enabled, bool hover);
+/* Five-pointed star of radius r; fill 0..1 colours its left part (a half
+ * star at 0.5), the rest in `empty`. */
+void star(float cx, float cy, float r, float fill, u32 color, u32 empty);
+/* A rating out of 10 as five stars of radius r from x (halves rounded). */
+float stars(float x, float cy, float r, float rating10, u32 color, u32 empty);
+/* Silver arrowhead (a notch at its back) pointing left (dir -1) or right
+ * (+1), w x h around (cx, cy): the scrub bars' step buttons. */
+void arrowHead(float cx, float cy, int dir, float w, float h, bool enabled, bool hot);
+/* Round white "back" button with a circling arrow (detail page, player). */
+void backButton(float cx, float cy, float r, bool hover);
 
 /* Thin rounded progress bar (frac 0..1). */
 void progress(float x, float y, float w, float h, float frac);
@@ -202,7 +211,8 @@ float pulse();
  * (readable on any background, including the Flix header band). */
 void avatar(float cx, float cy, float r, const char* name, float focus);
 
-/* Rotating loading ring (ring.png) centred at cx, cy. */
+/* The loading animation centred at cx, cy: five blocks a swell runs
+ * through (ring: unused, the ring.png of before). */
 void spinner(GRRLIB_texImg* ring, float cx, float cy);
 
 } // namespace Ui

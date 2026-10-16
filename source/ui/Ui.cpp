@@ -42,16 +42,17 @@ static const Palette DARK = {
     /* dim */                            0x000000B0,
 };
 
+/* WiiFlix: the old Wii video channel's light grey, under its red band */
 static const Palette FLIX = {
-    /* bgTop, bgBottom, stripe */        0x303030FF, 0x111111FF, 0x00000000,
-    /* cardTop, cardBottom, cardBorder */0x4A4A4AFF, 0x363636FF, 0x5E5E5EFF,
-    /* text, textDim, textOnAccent */    0xF2F2F2FF, 0xA8A8A8FF, 0xFFFFFFFF,
-    /* accent, accentDark, glow */       0xD81F26FF, 0xFF6B6FFF, 0xFF333370,
-    /* shadow */                         0x00000090,
-    /* barTop, barBottom, barBorder */   0x3C3C3CFF, 0x222222FF, 0x555555FF,
-    /* field, fieldBorder */             0x1C1C1CFF, 0x555555FF,
-    /* danger, ok */                     0xFF5A52FF, 0x46C35FFF,
-    /* dim */                            0x000000B8,
+    /* bgTop, bgBottom, stripe */        0xEAEAEAFF, 0xD2D2D2FF, 0x00000000,
+    /* cardTop, cardBottom, cardBorder */0xF8F8F8FF, 0xE3E3E3FF, 0xB2B2B2FF,
+    /* text, textDim, textOnAccent */    0x2B2B2BFF, 0x6E6E6EFF, 0xFFFFFFFF,
+    /* accent, accentDark, glow */       0xE50914FF, 0xE50914FF, 0xE5091460,
+    /* shadow */                         0x00000038,
+    /* barTop, barBottom, barBorder */   0xEFEFEFFF, 0xCDCDCDFF, 0xA6A6A6FF,
+    /* field, fieldBorder */             0xFFFFFFFF, 0xB6B6B6FF,
+    /* danger, ok */                     0xE50914FF, 0x3DAF5AFF,
+    /* dim */                            0x000000A0,
 };
 
 static const Palette LUHU = {
@@ -78,28 +79,12 @@ static const Palette SUSHI = {
     /* dim */                            0x000000B8,
 };
 
-static Theme           s_theme = Theme::Dark;
-static HomeLayout      s_layout = HomeLayout::Rows;
-void       setHomeLayout(HomeLayout l) { s_layout = l; }
-static LibraryStyle s_libStyle = LibraryStyle::ListCover;
-void         setLibraryStyle(LibraryStyle s) { s_libStyle = s; }
-LibraryStyle libraryStyle()                  { return s_libStyle; }
-HomeLayout homeLayout()                { return s_layout; }
+/* WiiFlix has one look (no Theme setting): the light Flix palette */
+static const Theme     s_theme = Theme::Flix;
+LibraryStyle libraryStyle()                  { return LibraryStyle::ListCover; }
 static GRRLIB_ttfFont* s_font  = nullptr;
 
-void        setTheme(Theme t)   { s_theme = t; }
 Theme       theme()             { return s_theme; }
-Theme       nextTheme(Theme t)  { return (Theme)(((int)t + 1) % THEME_COUNT); }
-const char* themeName(Theme t)
-{
-    switch (t) {
-    case Theme::Dark: return N_("Dark");
-    case Theme::Flix: return N_("Flix");
-    case Theme::Luhu: return N_("Luhu");
-    case Theme::Sushi: return N_("Sushi");
-    default:          return N_("Light");
-    }
-}
 static const Palette& themePal()
 {
     switch (s_theme) {
@@ -420,16 +405,13 @@ void drawHeaderBand()
 {
     const float h = headerBand();
     if (h <= 0) return;
-    /* glossy red title band of the old video channels */
+    /* the old video channels' red title band: one flat red, a soft shadow
+     * under it */
     const float L = screenLeft(), R = screenRight();
     beginShapes();
-    GX_Begin(GX_QUADS, GX_VTXFMT0, 12);
-    vtx(L, 0, 0xD3242AFF); vtx(R, 0, 0xD3242AFF); vtx(R, h * 0.5f, 0xB8141AFF); vtx(L, h * 0.5f, 0xB8141AFF);
-    vtx(L, h * 0.5f, 0xA80F15FF); vtx(R, h * 0.5f, 0xA80F15FF); vtx(R, h, 0x86090DFF); vtx(L, h, 0x86090DFF);
-    vtx(L, h, 0x4A0306FF); vtx(R, h, 0x4A0306FF); vtx(R, h + 2, 0x4A030600); vtx(L, h + 2, 0x4A030600);
-    GX_End();
-    GX_Begin(GX_QUADS, GX_VTXFMT0, 4);
-    vtx(L, 0, 0xFFFFFF40); vtx(R, 0, 0xFFFFFF40); vtx(R, 1, 0xFFFFFF40); vtx(L, 1, 0xFFFFFF40);
+    GX_Begin(GX_QUADS, GX_VTXFMT0, 8);
+    vtx(L, 0, RED); vtx(R, 0, RED); vtx(R, h, RED); vtx(L, h, RED);
+    vtx(L, h, 0x00000040); vtx(R, h, 0x00000040); vtx(R, h + 3, 0x00000000); vtx(L, h + 3, 0x00000000);
     GX_End();
 }
 
@@ -442,23 +424,42 @@ void card(float x, float y, float w, float h, float r, float focus)
     roundBorder(x, y, w, h, r, focus > 0.0f ? 2.0f + focus : 2.0f, mix(p.cardBorder, p.accent, focus));
 }
 
-void button(float x, float y, float w, float h, const char* label, int size, float focus)
+void grow(float& x, float& y, float& w, float& h, float by)
+{
+    x -= w * (by - 1.0f) * 0.5f;
+    y -= h * (by - 1.0f) * 0.5f;
+    w *= by;
+    h *= by;
+}
+
+void button(float x, float y, float w, float h, const char* label, int size, float focus, float radius)
 {
     const Palette& p = pal();
     label = tr(label);   /* buttons, hints, tabs and keys say the interface's words */
-    card(x, y, w, h, h * 0.5f, focus);
+    /* Flix: the button under the pointer (or the D-pad) grows a little and
+     * turns orange, its label white, like the old video channels' Play */
+    const bool orange = theme() == Theme::Flix && focus > 0.0f;
+    if (orange) grow(x, y, w, h, 1.0f + (HOVER_GROW - 1.0f) * focus);
+    const float r = radius < 0.0f ? h * 0.5f : radius;
+    card(x, y, w, h, r, orange ? 0.0f : focus);
+    if (orange) {
+        shadow(x - 2, y, w + 4, h + 3, r + 2, 8.0f, alpha(0xF7922E80, focus));
+        roundRect(x, y, w, h, r, alpha(HOVER_TOP, focus), alpha(HOVER_BOTTOM, focus));
+        roundBorder(x, y, w, h, r, 1.5f, alpha(HOVER_EDGE, focus));
+    }
     /* glossy top highlight */
-    roundRect(x + h * 0.3f, y + 3, w - h * 0.6f, h * 0.36f, h * 0.18f,
-              alpha(0xFFFFFFFF, theme() == Theme::Light ? 0.55f : 0.06f),
+    const float gi = radius < 0.0f ? h * 0.3f : 3.0f;   /* its inset from the ends */
+    roundRect(x + gi, y + 3, w - gi * 2, h * 0.36f, radius < 0.0f ? h * 0.18f : (r < 3 ? r : 3),
+              alpha(0xFFFFFFFF, theme() == Theme::Light || theme() == Theme::Flix ? 0.55f * (1.0f - 0.6f * focus) : 0.06f),
               alpha(0xFFFFFFFF, 0.0f));
     textCentered(x + w * 0.5f, y + (h - size) * 0.5f - 1, label, size,
-                 mix(p.text, p.accentDark, focus));
+                 orange ? mix(p.text, 0xFFFFFFFF, focus) : mix(p.text, p.accentDark, focus));
 }
 
 void header(const char* title, const char* subtitle)
 {
     const Palette& p = pal();
-    text(28, 10 + (headerBand() > 0 ? 0 : 8), title, 24, p.text);
+    text(28, 10 + (headerBand() > 0 ? 0 : 8), title, 24, headerBand() > 0 ? 0xFFFFFFFF : p.text);
     if (subtitle) textRight(612, headerBand() > 0 ? 16 : 24, subtitle, 15,
                             headerBand() > 0 ? 0xFFFFFFC0 : p.textDim);
     if (headerBand() <= 0) roundRect(28, 52, 584, 2, 1, alpha(p.cardBorder, 0.8f));
@@ -745,13 +746,18 @@ static void roundArrow(float cx, float cy, float r0, int dir, bool enabled, bool
     const Palette& p = pal();
     float k   = enabled ? 1.0f : 0.35f;
     bool  hot = hover && enabled;
-    float rad = hot ? r0 + 2 : r0;
+    float rad = hot ? r0 * HOVER_GROW : r0;
     shadow(cx - rad, cy - rad + 2, rad * 2, rad * 2, rad, 5.0f, alpha(p.shadow, k));
-    if (hot) shadow(cx - rad - 2, cy - rad - 2, rad * 2 + 4, rad * 2 + 4, rad + 2, 8.0f, p.glow);
-    roundRect(cx - rad, cy - rad, rad * 2, rad * 2, rad, alpha(p.cardTop, k), alpha(p.cardBottom, k));
-    roundBorder(cx - rad, cy - rad, rad * 2, rad * 2, rad, hot ? 2.5f : 1.5f,
-                alpha(hot ? p.accent : p.cardBorder, k));
-    u32 c = enabled ? p.accent : alpha(p.textDim, 0.5f);
+    if (hot) {
+        shadow(cx - rad - 2, cy - rad - 1, rad * 2 + 4, rad * 2 + 4, rad + 2, 8.0f, 0xF7922E80);
+        roundRect(cx - rad, cy - rad, rad * 2, rad * 2, rad, HOVER_TOP, HOVER_BOTTOM);
+        roundBorder(cx - rad, cy - rad, rad * 2, rad * 2, rad, 1.5f, HOVER_EDGE);
+    } else {
+        roundRect(cx - rad, cy - rad, rad * 2, rad * 2, rad, alpha(p.cardTop, k), alpha(p.cardBottom, k));
+        roundBorder(cx - rad, cy - rad, rad * 2, rad * 2, rad, 1.5f, alpha(p.cardBorder, k));
+    }
+    u32 c = hot ? 0xFFFFFFFF : enabled ? p.accent : alpha(p.textDim, 0.5f);
+    r0 = rad;
     float a = r0 * 0.47f, w = r0 * 0.37f;     /* triangle half-length / half-width */
     switch (dir) {
     case 0: triangle(cx, cy - a, cx + a, cy + w, cx - a, cy + w, c); break;
@@ -769,6 +775,87 @@ void arrowButton(float cx, float cy, bool up, bool enabled, bool hover)
 void pageArrow(float cx, float cy, bool left, bool enabled, bool hover)
 {
     roundArrow(cx, cy, 21, left ? 2 : 3, enabled, hover);
+}
+
+/* a fan of triangles from the centre to the ten points */
+static void starShape(float cx, float cy, float r, u32 col)
+{
+    float px[10], py[10];
+    for (int i = 0; i < 10; ++i) {
+        const float ang = -1.5707963f + i * 0.6283185f;      /* first point up */
+        const float rr  = i & 1 ? r * 0.42f : r;
+        px[i] = cx + cosf(ang) * rr;
+        py[i] = cy + sinf(ang) * rr;
+    }
+    for (int i = 0; i < 10; ++i)
+        triangle(cx, cy, px[i], py[i], px[(i + 1) % 10], py[(i + 1) % 10], col);
+}
+
+void star(float cx, float cy, float r, float fill, u32 color, u32 empty)
+{
+    if (fill >= 0.99f) { starShape(cx, cy, r, color); return; }
+    starShape(cx, cy, r, empty);
+    if (fill <= 0.01f) return;
+    clip(cx - r, cy - r, r * 2 * fill, r * 2);
+    starShape(cx, cy, r, color);
+    clipReset();
+}
+
+float stars(float x, float cy, float r, float rating10, u32 color, u32 empty)
+{
+    const float halves = floorf(rating10 + 0.5f) * 0.5f;     /* 0..5 by halves */
+    const float gap = r * 0.35f;
+    for (int i = 0; i < 5; ++i) {
+        float f = halves - i;
+        star(x + r + i * (r * 2 + gap), cy, r, f < 0 ? 0 : f > 1 ? 1 : f, color, empty);
+    }
+    return 5 * r * 2 + 4 * gap;
+}
+
+void arrowHead(float cx, float cy, int dir, float w, float h, bool enabled, bool hot)
+{
+    const Palette& p = pal();
+    hot = hot && enabled;
+    const float g = hot ? HOVER_GROW : 1.0f, s = (float)dir;
+    const float hw = w * 0.5f * g, hh = h * 0.5f * g;
+    const float tipX = cx + s * hw, backX = cx - s * hw, notchX = cx - s * hw * 0.35f;
+    auto head = [&](float dy, float grow, u32 col) {
+        triangle(tipX + s * grow, cy + dy, backX - s * grow, cy - hh + dy - grow, notchX, cy + dy, col);
+        triangle(tipX + s * grow, cy + dy, notchX, cy + dy, backX - s * grow, cy + hh + dy + grow, col);
+    };
+    const float k = enabled ? 1.0f : 0.35f;
+    head(3, 0, alpha(p.shadow, k));                                           /* drop shadow */
+    head(0, 1.5f, alpha(hot ? HOVER_EDGE : p.cardBorder, k));                  /* outline     */
+    head(0, 0, alpha(hot ? HOVER_TOP : mix(p.cardTop, p.cardBottom, 0.5f), k));
+}
+
+void backButton(float cx, float cy, float r, bool hover)
+{
+    const Palette& p = pal();
+    if (hover) r *= HOVER_GROW;
+    shadow(cx - r, cy - r + 3, r * 2, r * 2, r, 6.0f, p.shadow);
+    if (hover) {
+        roundRect(cx - r, cy - r, r * 2, r * 2, r, HOVER_TOP, HOVER_BOTTOM);
+        roundBorder(cx - r, cy - r, r * 2, r * 2, r, 2.0f, HOVER_EDGE);
+    } else {
+        circle(cx, cy, r, 0xF2F2F2FF);
+        roundBorder(cx - r, cy - r, r * 2, r * 2, r, 2.0f, 0xB0B0B0FF);
+    }
+    /* the arrow: three quarters of a ring, dots close enough to read as a
+     * stroke, its head at the open end pointing round the circle */
+    const u32 ink = hover ? 0xFFFFFFFF : 0x2B2B2BFF;
+    const float ar = r * 0.5f, th = r * 0.13f;
+    const float a0 = -0.6f, a1 = a0 + 4.6f;                   /* radians */
+    for (int i = 0; i <= 28; ++i) {
+        const float a = a0 + (a1 - a0) * i / 28.0f;
+        circle(cx + cosf(a) * ar, cy + sinf(a) * ar, th, ink);
+    }
+    const float hx = cx + cosf(a0) * ar, hy = cy + sinf(a0) * ar;   /* the head, at a0 */
+    const float tx = -sinf(a0), ty = cosf(a0);                       /* along the ring */
+    const float nx = cosf(a0), ny = sinf(a0);                        /* outward        */
+    const float hs = r * 0.32f;
+    triangle(hx - tx * hs, hy - ty * hs, hx + nx * hs + tx * hs * 0.4f, hy + ny * hs + ty * hs * 0.4f,
+             hx - nx * hs + tx * hs * 0.4f, hy - ny * hs + ty * hs * 0.4f, ink);
 }
 
 void progress(float x, float y, float w, float h, float frac)
@@ -798,20 +885,22 @@ void key(float x, float y, float w, float h, const char* label,
 {
     const Palette& p = pal();
     label = tr(label);
-    if (sel) {
-        shadow(x - 2, y - 2, w + 4, h + 4, 9, 7.0f, p.glow);
-        roundRect(x, y, w, h, 7, mix(p.accent, 0xFFFFFFFF, 0.25f), p.accentDark);
+    if (sel || hover) grow(x, y, w, h, HOVER_GROW);
+    if (sel || hover) {   /* the key chosen, or under the pointer: orange */
+        shadow(x - 2, y - 1, w + 4, h + 3, 9, 7.0f, 0xF7922E80);
+        roundRect(x, y, w, h, 7, HOVER_TOP, HOVER_BOTTOM);
+        roundBorder(x, y, w, h, 7, 1.5f, HOVER_EDGE);
     } else if (latched) {
         roundRect(x, y, w, h, 7, 0xF7B54AFF, 0xE08E1BFF);
     } else {
         u32 top = special ? mix(p.cardBottom, p.cardBorder, 0.35f) : p.cardTop;
         roundRect(x, y, w, h, 7, top, p.cardBottom);
-        roundBorder(x, y, w, h, 7, hover ? 2.0f : 1.0f, hover ? p.accent : alpha(p.cardBorder, 0.8f));
+        roundBorder(x, y, w, h, 7, 1.0f, alpha(p.cardBorder, 0.8f));
     }
     /* short ASCII words (SYM, ABC) get a smaller size than single glyphs */
     int sz = 15;
     if (strlen(label) > 1 && (unsigned char)label[0] < 0x80) sz = w > 60 ? 13 : 11;
-    u32 tc = (sel || latched) ? p.textOnAccent : (special ? p.textDim : p.text);
+    u32 tc = (sel || hover || latched) ? p.textOnAccent : (special ? p.textDim : p.text);
     textCentered(x + w * 0.5f, y + (h - sz) * 0.5f - 1, label, sz, tc);
 }
 
@@ -872,13 +961,30 @@ void avatar(float cx, float cy, float r, const char* name, float focus)
 
 void spinner(GRRLIB_texImg* ring, float cx, float cy)
 {
-    if (!ring) return;
-    float angle = (float)(ticks_to_millisecs(gettime()) % 1500) * (360.0f / 1500.0f);
-    GRRLIB_SetMidHandle(ring, true);
-    const u32 tint = theme() == Theme::Light ? 0x34BEEDFF : theme() == Theme::Flix ? 0xE52A30FF
-                   : theme() == Theme::Dark ? 0xFFFFFFFF : pal().accent;
-    GRRLIB_DrawImg(cx, cy, ring, angle, 1.0f, 1.0f, tint);
-    GRRLIB_SetMidHandle(ring, false);
+    (void)ring;   /* WiiFlix: the old video channels' five blocks instead */
+    /* five steel-blue blocks in a row; a swell runs through them left to
+     * right (the one it is on bigger and brighter, its neighbours a little),
+     * then starts again from the left */
+    const float CYCLE = 1000.0f, BW = 7.0f, BH = 14.0f, STEP = 10.0f;
+    const float at = (float)(ticks_to_millisecs(gettime()) % (u64)CYCLE) / CYCLE * 6.0f - 0.5f;
+    float k[5];
+    for (int i = 0; i < 5; ++i) {
+        const float d = fabsf(i - at);
+        k[i] = d < 1.0f ? 1.0f - d : 0.0f;
+    }
+    /* the swollen one last, over its neighbours */
+    int order[5] = { 0, 1, 2, 3, 4 };
+    for (int a = 0; a < 5; ++a)
+        for (int b = a + 1; b < 5; ++b)
+            if (k[order[b]] < k[order[a]]) { int t = order[a]; order[a] = order[b]; order[b] = t; }
+    for (int n = 0; n < 5; ++n) {
+        const int i = order[n];
+        const float w = BW * (1.0f + 0.9f * k[i]), h = BH * (1.0f + 0.6f * k[i]);
+        const float x = cx + (i - 2) * STEP - w * 0.5f, y = cy - h * 0.5f;
+        shadow(x, y + 1, w, h, 2, 3.0f, 0x00000050);
+        roundRect(x, y, w, h, 2, mix(0x9DB8D8FF, 0xDCEBFAFF, k[i]), mix(0x6684AAFF, 0xA9C6E6FF, k[i]));
+        roundBorder(x, y, w, h, 2, 1.0f, 0x3E557480);
+    }
 }
 
 /* ---- Notice: a message from the server ---------------------------------- */

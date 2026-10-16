@@ -19,7 +19,7 @@ bool showErrorScreen(const char* title, const std::string& line1,
 /* HOME menu (HomeMenu.cpp).  Returns true when the user leaves WiiFin
  * ("Wii Menu", or "Reset" which also sets g_restartApp). */
 bool doShowHomeOverlay(GRRLIB_ttfFont* font, GRRLIB_texImg* btnTex,
-                       GRRLIB_texImg* cursorPointerTex, bool musicEnabled);
+                       GRRLIB_texImg* cursorPointerTex);
 
 /* Plays lv.pendingPlay* and what follows it (PlaySession.cpp).  lastItemId
  * receives the item playing at the end.  Returns true when the user left

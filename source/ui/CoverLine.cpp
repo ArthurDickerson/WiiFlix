@@ -11,29 +11,32 @@
 #include <unistd.h>
 #include <ogc/lwp_watchdog.h>
 
-/* Logo (data/images/logo_wiifin.png, the WiiFlix wordmark) */
-extern unsigned char data_logo_wiifin_png[];
-static GRRLIB_texImg* s_logo = nullptr;
-static int            s_logoUsers = 0;
-
 /* Defined in LibraryView.cpp: decodes a JPEG into an RGBA8 texture. */
 GRRLIB_texImg* loadJPEGTexture(const u8* data, u32 size);
 
-/* ---- Layout (640x480 column; the line and the scrub bar span the whole
+/* ---- Layout (640x480 column; the bars and the line span the whole
  * screen, which is wider in 16:9 — see Ui::screenLeft/Right) ------------- */
 static const float CENTER_X  = 320.0f;
-static const float CENTER_Y  = 196.0f;   /* middle of the cover line        */
-static const float BIG_W     = 148.0f, BIG_H   = 222.0f;   /* selected, 2:3 */
-static const float SMALL_W   = 100.0f, SMALL_H = 150.0f;   /* the others    */
+static const float CENTER_Y  = 205.0f;   /* middle of the cover line        */
+static const float BIG_W     = 140.0f, BIG_H   = 210.0f;   /* selected, 2:3 */
+static const float SMALL_W   =  96.0f, SMALL_H = 144.0f;   /* the others    */
 static const float GAP       = 14.0f;
 static const float RADIUS    = 6.0f;
 
-static const float TITLE_Y   = 12.0f;    /* row name                         */
-static const float NEXT_Y    = 42.0f;    /* "next row" label under it        */
-static const float INFO_Y    = 318.0f;   /* selected title, then details     */
-static const float SCRUB_Y   = 398.0f;   /* centre line of the scrub bar     */
+/* the wordmark on the red band (Ui::headerBand), then the row's name in a
+ * long bar under it, the Up/Down pill beside it */
+static const float WORD_X    = 24.0f, WORD_SIZE = 26;
+static const float BAR_Y     = 54.0f, BAR_H = 30.0f;
+static const float BAR_SIDE  = 20.0f;    /* from the screen edges            */
+static const float SWITCH_W  = 76.0f;    /* the ▼▲ pill                      */
+static const float SWITCH_GAP = 10.0f;
+
+static const float SCRUB_Y   = 336.0f;   /* centre line of the scrub bar     */
 static const float KNOB_R    = 11.0f;
-static const float ARROW_R   = 15.0f;
+static const float ARROW_X   = 38.0f;    /* arrow centres, from the edges    */
+static const float ARROW_W   = 26.0f, ARROW_H = 36.0f;
+static const float TITLE_Y   = 360.0f;   /* selected title, under the bar    */
+static const float META_Y    = 390.0f;   /* its details, stars, rating, n/N  */
 static const float HINTS_Y   = 454.0f;
 
 /* Covers kept in memory around a row's selection (each side) */
@@ -73,7 +76,6 @@ CoverLine::CoverLine(JellyfinClient& c, const std::string& url, const JellyfinAu
     : client(c), serverUrl(url), auth(a)
 {
     LWP_MutexInit(&lock, false);
-    if (s_logoUsers++ == 0) s_logo = GRRLIB_LoadTexture(data_logo_wiifin_png);
 }
 
 CoverLine::~CoverLine()
@@ -81,7 +83,6 @@ CoverLine::~CoverLine()
     stopLoader();
     for (auto& r : rows) freeTextures(r);
     if (lock != LWP_MUTEX_NULL) LWP_MutexDestroy(lock);
-    if (--s_logoUsers == 0 && s_logo) { GRRLIB_FreeTexture(s_logo); s_logo = nullptr; }
 }
 
 void CoverLine::freeTextures(Row& r)
@@ -135,6 +136,15 @@ void CoverLine::build(const std::vector<JellyfinLibrary>& libs)
         rows.push_back(std::move(r));
     }
 
+    /* Instant Queue: the favourites (fetched later, like the genres) */
+    {
+        Row r;
+        r.title = tr("Instant Queue");
+        r.queue = true;
+        r.state = ROW_PENDING;
+        rows.push_back(std::move(r));
+    }
+
     /* One row per genre of the movies and TV shows (titles fetched later) */
     {
         std::vector<JellyfinItem> genres;
@@ -169,20 +179,29 @@ void CoverLine::build(const std::vector<JellyfinLibrary>& libs)
     SYS_Report("[CoverLine] %d rows (%d to continue)\n", (int)rows.size(), (int)rows[0].items.size());
 }
 
-/* Loader thread: the titles of genre row r, a page at a time. */
+/* Loader thread: the titles of row r (a genre, or the queue), a page at a
+ * time. */
 void CoverLine::fetchRow(int r)
 {
     const std::string genreId = rows[r].genreId;
+    const bool queue = rows[r].queue;
     std::vector<JellyfinItem> all;
     bool ok = true;
     char q[384];
     for (int start = 0; start < MAX_ITEMS && !stopReq; start += PAGE) {
         std::vector<JellyfinItem> page;
         int total = 0;
-        snprintf(q, sizeof(q),
-                 "/Users/%s/Items?Recursive=true&IncludeItemTypes=Movie,Series&GenreIds=%s"
-                 "&SortBy=SortName&SortOrder=Ascending&StartIndex=%d&Limit=%d",
-                 auth.userId.c_str(), genreId.c_str(), start, PAGE);
+        if (queue)
+            snprintf(q, sizeof(q),
+                     "/Users/%s/Items?Recursive=true&Filters=IsFavorite"
+                     "&IncludeItemTypes=Movie,Series,Season,Episode,Video"
+                     "&SortBy=SortName&SortOrder=Ascending&StartIndex=%d&Limit=%d",
+                     auth.userId.c_str(), start, PAGE);
+        else
+            snprintf(q, sizeof(q),
+                     "/Users/%s/Items?Recursive=true&IncludeItemTypes=Movie,Series&GenreIds=%s"
+                     "&SortBy=SortName&SortOrder=Ascending&StartIndex=%d&Limit=%d",
+                     auth.userId.c_str(), genreId.c_str(), start, PAGE);
         if (!client.getItemsByQuery(serverUrl, auth, q, page, &total)) { ok = !all.empty(); break; }
         for (auto& it : page) all.push_back(std::move(it));
         if ((int)page.size() < PAGE || (int)all.size() >= total) break;
@@ -208,7 +227,8 @@ void CoverLine::fetchRow(int r)
     row.scroll = (float)row.sel;
     row.state  = ok ? ROW_READY : ROW_FAILED;
     LWP_MutexUnlock(lock);
-    SYS_Report("[CoverLine] genre \"%s\": %d titles\n", row.title.c_str(), (int)row.items.size());
+    SYS_Report("[CoverLine] %s \"%s\": %d titles\n", queue ? "queue" : "genre",
+               row.title.c_str(), (int)row.items.size());
 }
 
 bool CoverLine::rowReady(int r) const
@@ -360,8 +380,13 @@ void CoverLine::evictFar()
 
 /* ---- Geometry ------------------------------------------------------------ */
 
-float CoverLine::trackLeft()  const { return Ui::screenLeft()  + 40.0f + ARROW_R * 2 + 10.0f; }
-float CoverLine::trackRight() const { return Ui::screenRight() - 40.0f - ARROW_R * 2 - 10.0f; }
+/* the ▼▲ pill, top right; its left half is ▼ (next row), its right ▲ */
+static float switchX() { return Ui::screenRight() - BAR_SIDE - SWITCH_W; }
+/* the scrub bar's arrows: centre x of the left (-1) or right (+1) one */
+static float arrowX(int dir) { return dir < 0 ? Ui::screenLeft() + ARROW_X : Ui::screenRight() - ARROW_X; }
+
+float CoverLine::trackLeft()  const { return arrowX(-1) + ARROW_W * 0.5f + 22.0f; }
+float CoverLine::trackRight() const { return arrowX(+1) - ARROW_W * 0.5f - 22.0f; }
 
 float CoverLine::knobX(const Row& row) const
 {
@@ -448,14 +473,12 @@ CoverLine::Action CoverLine::update(const ir_t& ir, bool& irMode)
     const bool ptr = ir.valid && irMode;
     if (ptr) {
         const float px = ir.x, py = ir.y;
-        /* row arrows beside the row name */
-        float tw = Ui::textWidth(row.title.c_str(), 22) * 0.5f;
-        if (fabsf(py - (TITLE_Y + 12)) < 16) {
-            if (rowSel > 0 && fabsf(px - (CENTER_X - tw - 26)) < 16)                     hoverRowBtn = -1;
-            if (rowSel + 1 < (int)rows.size() && fabsf(px - (CENTER_X + tw + 26)) < 16)  hoverRowBtn = +1;
+        /* the ▼▲ pill: ▼ the next row, ▲ the one before */
+        const float sx = switchX();
+        if (py >= BAR_Y - 2 && py < BAR_Y + BAR_H + 2 && px >= sx - 2 && px < sx + SWITCH_W + 2) {
+            if (px < sx + SWITCH_W * 0.5f) { if (rowSel + 1 < (int)rows.size()) hoverRowBtn = +1; }
+            else if (rowSel > 0)                                                  hoverRowBtn = -1;
         }
-        if (rowSel + 1 < (int)rows.size() && fabsf(py - (NEXT_Y + 7)) < 9 &&
-            fabsf(px - CENTER_X) < 120)                                                 hoverRowBtn = +1;
         if (n > 0) {
             /* covers: the one nearest the middle wins where they overlap */
             float best = 1e9f;
@@ -469,10 +492,9 @@ CoverLine::Action CoverLine::update(const ir_t& ir, bool& irMode)
                 }
             }
             /* scrub bar */
-            if (fabsf(py - SCRUB_Y) < ARROW_R + 4) {
-                float lx = trackLeft() - 10 - ARROW_R, rx = trackRight() + 10 + ARROW_R;
-                if (fabsf(px - lx) < ARROW_R + 4) hoverArrow = -1;
-                else if (fabsf(px - rx) < ARROW_R + 4) hoverArrow = +1;
+            if (fabsf(py - SCRUB_Y) < ARROW_H * 0.5f + 4) {
+                if (fabsf(px - arrowX(-1)) < ARROW_W * 0.5f + 8)      hoverArrow = -1;
+                else if (fabsf(px - arrowX(+1)) < ARROW_W * 0.5f + 8) hoverArrow = +1;
             }
             if (fabsf(px - knobX(row)) < KNOB_R + 6 && fabsf(py - SCRUB_Y) < KNOB_R + 6) hoverKnob = true;
             else if (px >= trackLeft() - 4 && px <= trackRight() + 4 && fabsf(py - SCRUB_Y) < 10) hoverTrack = true;
@@ -504,9 +526,9 @@ CoverLine::Action CoverLine::update(const ir_t& ir, bool& irMode)
             /* a row that failed to load: A tries again */
             LWP_MutexLock(lock);
             bool failed = row.state == ROW_FAILED;
-            if (failed && !row.genreId.empty()) row.state = ROW_PENDING;
+            if (failed && lazy(row)) row.state = ROW_PENDING;
             LWP_MutexUnlock(lock);
-            if (failed && row.genreId.empty()) { isBuilt = false; return Action::None; }  /* rebuild */
+            if (failed && !lazy(row)) { isBuilt = false; return Action::None; }  /* rebuild */
             if (ptr && hoverRowBtn) moveRow(hoverRowBtn);
             return Action::None;
         }
@@ -538,42 +560,66 @@ CoverLine::Action CoverLine::update(const ir_t& ir, bool& irMode)
 
 /* ---- Drawing ------------------------------------------------------------ */
 
-/* Up (dir -1) or down (+1) chevron in a small round button. */
-static void rowButton(float cx, float cy, int dir, bool hover, u32 col, u32 ring)
+/* A rounded bar of the top row: card colours, a soft shadow. */
+static void pill(float x, float y, float w, float h, bool hot)
 {
-    if (hover) Ui::circle(cx, cy, 14, Ui::alpha(ring, 0.35f));
-    float g = hover ? 1.2f : 1.0f;
-    float s = (float)dir;
-    Ui::triangle(cx - 7 * g, cy - s * 4 * g, cx + 7 * g, cy - s * 4 * g, cx, cy + s * 5 * g, col);
+    const Ui::Palette& p = Ui::pal();
+    Ui::shadow(x, y + 2, w, h, h * 0.5f, 5.0f, p.shadow);
+    Ui::roundRect(x, y, w, h, h * 0.5f, p.cardTop, p.cardBottom);
+    Ui::roundBorder(x, y, w, h, h * 0.5f, hot ? 2.0f : 1.0f, hot ? p.accent : p.cardBorder);
+}
+
+/* Solid down (dir +1) or up (-1) triangle, wide and flat. */
+static void updown(float cx, float cy, int dir, float g, u32 col)
+{
+    const float s = (float)dir;
+    Ui::triangle(cx - 10 * g, cy - s * 5 * g, cx + 10 * g, cy - s * 5 * g, cx, cy + s * 6 * g, col);
+}
+
+/* "WiiFlix" on the red band: white, a dark outline, drawn twice 1 px
+ * apart for a bolder stroke */
+static void wordmark()
+{
+    const char* word = "WiiFlix";
+    const float wx = Ui::screenLeft() + WORD_X, wy = (Ui::headerBand() - WORD_SIZE) * 0.5f - 1;
+    const u32 edge = 0x00000060;
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 2; ++dx)
+            if (dx || dy) Ui::text(wx + dx, wy + dy, word, WORD_SIZE, edge);
+    Ui::text(wx, wy, word, WORD_SIZE, 0xFFFFFFFF);
+    Ui::text(wx + 1, wy, word, WORD_SIZE, 0xFFFFFFFF);
 }
 
 void CoverLine::drawTop()
 {
     const Ui::Palette& p = Ui::pal();
-
-    if (s_logo) {
-        const float h = 24, w = h * s_logo->w / s_logo->h;
-        GRRLIB_DrawImg(Ui::screenLeft() + 16, 10, s_logo, 0, w / s_logo->w, h / s_logo->h, 0xFFFFFFFF);
-    }
-
     const Row& row = rows[rowSel];
-    float tw = Ui::textWidth(row.title.c_str(), 22) * 0.5f;
-    Ui::textCentered(CENTER_X, TITLE_Y, row.title.c_str(), 22, p.text);
-    if (rowSel > 0)
-        rowButton(CENTER_X - tw - 26, TITLE_Y + 12, -1, hoverRowBtn == -1, p.text, p.accent);
-    if (rowSel + 1 < (int)rows.size()) {
-        rowButton(CENTER_X + tw + 26, TITLE_Y + 12, +1, hoverRowBtn == +1, p.text, p.accent);
-        /* TRANSLATORS: under the row name; %s is the name of the next row (Down) */
-        char next[160];
-        snprintf(next, sizeof(next), tr("Next: %s"), rows[rowSel + 1].title.c_str());
-        std::string s = fit(next, 12, 240);
-        Ui::textCentered(CENTER_X, NEXT_Y, s.c_str(), 12, hoverRowBtn == +1 ? p.text : p.textDim);
-    }
 
-    /* which row of how many, top right */
-    char pos[32];
-    snprintf(pos, sizeof(pos), "%d / %d", rowSel + 1, (int)rows.size());
-    Ui::textRight(Ui::screenRight() - 18, 16, pos, 13, p.textDim);
+    /* the row's name, after a dot, in a bar as long as the screen allows */
+    const float bx = Ui::screenLeft() + BAR_SIDE, sx = switchX();
+    const float bw = sx - SWITCH_GAP - bx, cy = BAR_Y + BAR_H * 0.5f;
+    pill(bx, BAR_Y, bw, BAR_H, false);
+    Ui::circle(bx + 18, cy, 6.5f, p.text);
+    std::string name = fit(row.title, 18, (int)bw - 48);
+    Ui::text(bx + 32, BAR_Y + 5, name.c_str(), 18, p.text);
+
+    /* ▼ next row, ▲ the one before: dimmed at the ends; under the pointer
+     * the pill grows and turns orange, like every button */
+    const bool canDown = rowSel + 1 < (int)rows.size(), canUp = rowSel > 0;
+    const bool hot = hoverRowBtn != 0;
+    float px = sx, py = BAR_Y, pw = SWITCH_W, ph = BAR_H;
+    if (hot) {
+        Ui::grow(px, py, pw, ph, Ui::HOVER_GROW);
+        Ui::shadow(px - 2, py, pw + 4, ph + 3, ph * 0.5f + 2, 8.0f, 0xF7922E80);
+        Ui::roundRect(px, py, pw, ph, ph * 0.5f, Ui::HOVER_TOP, Ui::HOVER_BOTTOM);
+        Ui::roundBorder(px, py, pw, ph, ph * 0.5f, 1.5f, Ui::HOVER_EDGE);
+    } else {
+        pill(px, py, pw, ph, false);
+    }
+    const u32 on = hot ? 0xFFFFFFFF : p.text, off = hot ? 0xFFFFFF70 : Ui::alpha(p.textDim, 0.35f);
+    const float mid = px + pw * 0.5f;   /* the two side by side, close */
+    updown(mid - 12, cy, +1, hoverRowBtn == +1 ? 1.15f : 1.0f, canDown ? on : off);
+    updown(mid + 12, cy, -1, hoverRowBtn == -1 ? 1.15f : 1.0f, canUp ? on : off);
 }
 
 void CoverLine::drawCovers(Row& row)
@@ -618,10 +664,7 @@ void CoverLine::drawCovers(Row& row)
             u8  lv   = (u8)(255 * bright);
             u32 tint = ((u32)lv << 24) | ((u32)lv << 16) | ((u32)lv << 8) | (u32)(255 * a);
 
-            if (sel && k > 0.5f)
-                Ui::shadow(x - 4, y - 4, w + 8, h + 8, RADIUS + 3, 12.0f, Ui::alpha(p.glow, a * Ui::pulse()));
-            else
-                Ui::shadow(x + 2, y + 4, w - 4, h - 2, RADIUS, 6.0f, Ui::alpha(p.shadow, a));
+            Ui::shadow(x + 2, y + 4, w - 4, h - 2, RADIUS, 6.0f, Ui::alpha(p.shadow, a));
 
             LWP_MutexLock(lock);
             GRRLIB_texImg* tex = row.tex[i];
@@ -641,9 +684,8 @@ void CoverLine::drawCovers(Row& row)
                 Ui::progress(x + 6, y + h - 10, w - 12, 4,
                              (float)it.playbackPositionTicks / (float)it.runtimeTicks);
 
-            if (sel && k > 0.5f) Ui::roundBorder(x, y, w, h, RADIUS, 3.0f, Ui::alpha(p.accent, a));
-            else                 Ui::roundBorder(x, y, w, h, RADIUS, hov ? 2.0f : 1.0f,
-                                                 Ui::alpha(hov ? p.accent : p.cardBorder, a * (hov ? 1.0f : 0.6f)));
+            /* a thin frame, the same on the selection (no colour) */
+            Ui::roundBorder(x, y, w, h, RADIUS, 1.0f, Ui::alpha(p.cardBorder, a * (hov ? 1.0f : 0.6f)));
         }
     }
 }
@@ -659,8 +701,9 @@ void CoverLine::drawInfo(const Row& row)
     const JellyfinItem& it = row.items[row.sel];
 
     std::string title = fit(displayName(it), 20, (int)Ui::screenWidth() - 80);
-    Ui::textCentered(CENTER_X, INFO_Y, title.c_str(), 20, Ui::alpha(p.text, a));
+    Ui::textCentered(CENTER_X, TITLE_Y, title.c_str(), 20, Ui::alpha(p.text, a));
 
+    /* one line under it: details, stars, the age rating in a box, n/N */
     char meta[200] = "";
     auto add = [&](const char* s) {
         size_t l = strlen(meta);
@@ -678,21 +721,58 @@ void CoverLine::drawInfo(const Row& row)
                 snprintf(buf, sizeof(buf), it.childCount > 1 ? tr("%d seasons") : tr("%d season"), it.childCount);
                 add(buf);
             }
+        } else if (it.type == "Season") {
+            if (it.childCount > 0) {
+                snprintf(buf, sizeof(buf), it.childCount > 1 ? tr("%d episodes") : tr("%d episode"), it.childCount);
+                add(buf);
+            }
         } else {
             int mins = (int)(it.runtimeTicks / 600000000LL);
             if (mins > 0) add(Lang::runTime(mins).c_str());
         }
     }
-    if (!it.officialRating.empty()) add(it.officialRating.c_str());
-    if (it.communityRating > 0.0f) { snprintf(buf, sizeof(buf), "%.1f/10", it.communityRating); add(buf); }
     if (it.playbackPositionTicks > 0 && it.runtimeTicks > 0) {
         int left = (int)((it.runtimeTicks - it.playbackPositionTicks) / 600000000LL);
         if (left > 0) { snprintf(buf, sizeof(buf), tr("%d min left"), left); add(buf); }
     }
-    if (meta[0]) {
-        std::string m = fit(meta, 14, (int)Ui::screenWidth() - 80);
-        Ui::textCentered(CENTER_X, INFO_Y + 28, m.c_str(), 14, Ui::alpha(p.textDim, a));
+
+    /* the pieces' widths first, to centre the line */
+    const int   TS = 15;                       /* text size              */
+    const float SEP = 18.0f, STAR = 15.0f, BADGE_PAD = 6.0f;
+    const bool  stars = it.communityRating > 0.0f;
+    const std::string rating = it.officialRating;
+    char pos[32];
+    snprintf(pos, sizeof(pos), "%d/%d", row.sel + 1, (int)row.items.size());
+    std::string m = fit(meta, TS, (int)Ui::screenWidth() - 300);
+
+    float w = 0;
+    int   parts = 0;
+    auto  span = [&](float pw) { w += (parts++ ? SEP : 0) + pw; };
+    if (!m.empty())      span((float)Ui::textWidth(m.c_str(), TS));
+    if (stars)           span(5 * STAR + 4 * STAR * 0.5f * 0.35f);
+    if (!rating.empty()) span(Ui::textWidth(rating.c_str(), 13) + BADGE_PAD * 2);
+    span((float)Ui::textWidth(pos, 14));
+
+    float x = CENTER_X - w * 0.5f;
+    parts = 0;
+    auto next = [&](float pw) { float at = x + (parts++ ? SEP : 0); x = at + pw; return at; };
+    const float midY = META_Y + 9;
+    if (!m.empty()) {
+        float at = next((float)Ui::textWidth(m.c_str(), TS));
+        Ui::text(at, META_Y, m.c_str(), TS, Ui::alpha(p.text, a));
     }
+    if (stars) {
+        float at = next(5 * STAR + 4 * STAR * 0.5f * 0.35f);
+        Ui::stars(at, midY, STAR * 0.5f, it.communityRating, Ui::alpha(p.accent, a),
+                  Ui::alpha(p.textDim, 0.3f * a));
+    }
+    if (!rating.empty()) {
+        float bw = Ui::textWidth(rating.c_str(), 13) + BADGE_PAD * 2;
+        float at = next(bw);
+        Ui::roundBorder(at, midY - 10, bw, 20, 3, 1.5f, Ui::alpha(p.text, a));
+        Ui::text(at + BADGE_PAD, midY - 8, rating.c_str(), 13, Ui::alpha(p.text, a));
+    }
+    Ui::text(next((float)Ui::textWidth(pos, 14)), META_Y + 1, pos, 14, Ui::alpha(p.textDim, a));
 }
 
 void CoverLine::drawScrubBar(const Row& row)
@@ -704,34 +784,21 @@ void CoverLine::drawScrubBar(const Row& row)
     float kx = knobX(row);
     if (dragging) kx = dragX < tl ? tl : dragX > tr_ ? tr_ : dragX;
 
-    /* end arrows */
-    auto arrowBtn = [&](float cx, int dir, bool enabled) {
-        bool hot = enabled && hoverArrow == dir;
-        float r = hot ? ARROW_R + 2 : ARROW_R;
-        Ui::shadow(cx - r, SCRUB_Y - r + 2, r * 2, r * 2, r, 4.0f, p.shadow);
-        Ui::circle(cx, SCRUB_Y, r, hot ? p.accent : p.cardBottom);
-        Ui::roundBorder(cx - r, SCRUB_Y - r, r * 2, r * 2, r, 1.5f, hot ? p.accentDark : p.cardBorder);
-        u32 col = !enabled ? Ui::alpha(p.textDim, 0.4f) : hot ? p.textOnAccent : p.text;
-        float s = (float)dir, g = hot ? 1.15f : 1.0f;
-        Ui::triangle(cx + s * 6 * g, SCRUB_Y, cx - s * 4 * g, SCRUB_Y - 7 * g, cx - s * 4 * g, SCRUB_Y + 7 * g, col);
-    };
-    arrowBtn(tl - 10 - ARROW_R, -1, row.sel > 0);
-    arrowBtn(tr_ + 10 + ARROW_R, +1, row.sel < n - 1);
+    /* end arrows: Wii Menu arrowheads (a notch at the back), silver */
+    Ui::arrowHead(arrowX(-1), SCRUB_Y, -1, ARROW_W, ARROW_H, row.sel > 0,     hoverArrow == -1);
+    Ui::arrowHead(arrowX(+1), SCRUB_Y, +1, ARROW_W, ARROW_H, row.sel < n - 1, hoverArrow == +1);
 
-    /* track, filled up to the knob */
-    const float th = hoverTrack || dragging ? 8.0f : 6.0f;
-    Ui::roundRect(tl, SCRUB_Y - th * 0.5f, tr_ - tl, th, th * 0.5f, p.field);
-    Ui::roundBorder(tl, SCRUB_Y - th * 0.5f, tr_ - tl, th, th * 0.5f, 1.0f, p.fieldBorder);
-    if (kx > tl + 1)
-        Ui::roundRect(tl, SCRUB_Y - th * 0.5f, kx - tl, th, th * 0.5f, p.accent, p.accentDark);
+    /* a thin track */
+    const float th = hoverTrack || dragging ? 5.0f : 3.0f;
+    Ui::roundRect(tl, SCRUB_Y - th * 0.5f, tr_ - tl, th, th * 0.5f, p.fieldBorder);
 
-    /* knob */
+    /* white knob */
     bool hot = hoverKnob || dragging;
     float r = hot ? KNOB_R + 2 : KNOB_R;
     if (hot) Ui::circle(kx, SCRUB_Y, r + 6, Ui::alpha(p.glow, 0.6f));
     Ui::shadow(kx - r, SCRUB_Y - r + 2, r * 2, r * 2, r, 4.0f, p.shadow);
     Ui::circle(kx, SCRUB_Y, r, 0xFFFFFFFF);
-    Ui::roundBorder(kx - r, SCRUB_Y - r, r * 2, r * 2, r, 2.5f, p.accent);
+    Ui::roundBorder(kx - r, SCRUB_Y - r, r * 2, r * 2, r, 1.5f, hot ? p.accent : 0xA0A6B0FF);
 
     /* while dragging: the title the knob is on, in a bubble above it */
     if (dragging && row.sel >= 0 && row.sel < n) {
@@ -746,12 +813,6 @@ void CoverLine::drawScrubBar(const Row& row)
         Ui::triangle(kx - 6, by + h - 1, kx + 6, by + h - 1, kx, by + h + 6, p.cardBottom);
         Ui::text(bx + 10, by + 4, s.c_str(), 14, p.text);
     }
-
-    /* position in the row */
-    char pos[48];
-    /* TRANSLATORS: position of the selected cover in the row: 37 of 212 */
-    snprintf(pos, sizeof(pos), tr("%d of %d"), n ? row.sel + 1 : 0, n);
-    Ui::textCentered(CENTER_X, SCRUB_Y + 16, pos, 12, p.textDim);
 }
 
 void CoverLine::drawHints()
@@ -768,7 +829,8 @@ void CoverLine::render(const ir_t& ir)
 {
     (void)ir;
     const Ui::Palette& p = Ui::pal();
-    Ui::background(false);
+    Ui::background();                 /* with the red band */
+    wordmark();
 
     if (rows.empty()) {
         Ui::textCentered(CENTER_X, 200, tr("Nothing to show yet"), 20, p.text);
@@ -788,7 +850,10 @@ void CoverLine::render(const ir_t& ir)
         drawInfo(row);
         drawScrubBar(row);
     } else if (state == ROW_READY) {
-        if (row.genreId.empty()) {
+        if (row.queue) {
+            Ui::textCentered(CENTER_X, CENTER_Y - 20, tr("Your queue is empty"), 20, p.text);
+            Ui::textCentered(CENTER_X, CENTER_Y + 10, tr("Add titles with \"Add to Queue\" on their page."), 14, p.textDim);
+        } else if (!lazy(row)) {
             Ui::textCentered(CENTER_X, CENTER_Y - 20, tr("Nothing to continue"), 20, p.text);
             Ui::textCentered(CENTER_X, CENTER_Y + 10, tr("Press Down to browse by genre."), 14, p.textDim);
         } else {
@@ -798,13 +863,8 @@ void CoverLine::render(const ir_t& ir)
         Ui::textCentered(CENTER_X, CENTER_Y - 20, tr("This row could not be loaded"), 18, p.text);
         Ui::textCentered(CENTER_X, CENTER_Y + 10, tr("Press A to try again."), 14, p.textDim);
     } else {
-        /* loading: three pulsing dots */
-        unsigned long long t = nowMs();
-        for (int i = 0; i < 3; ++i) {
-            float ph = (float)((t + i * 180) % 900) / 900.0f;
-            float s  = 0.5f + 0.5f * sinf(ph * 6.2831853f);
-            Ui::circle(CENTER_X - 24 + i * 24, CENTER_Y, 5 + 3 * s, Ui::alpha(p.accent, 0.4f + 0.6f * s));
-        }
+        /* loading: the five blocks */
+        Ui::spinner(nullptr, CENTER_X, CENTER_Y);
         Ui::textCentered(CENTER_X, CENTER_Y + 24, tr("Loading..."), 14, p.textDim);
     }
 

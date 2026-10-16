@@ -37,12 +37,9 @@ public:
     /* Why update() returned true with nothing to play: B on the libraries
      * or the profile menu's choice */
     /* SignIn: the server refused the profile's token, its password again */
-    enum class Exit { Profiles, Settings, WiiFinMenu, NowPlaying, SignIn };
+    enum class Exit { Profiles, WiiFinMenu, NowPlaying, SignIn };
     Exit exitTo = Exit::Profiles;
     bool signInAgain = false;   /* loadLibraries: the token refused, leave for the sign-in */
-    /* back from the Settings the profile menu opened: the home again, as
-     * the settings left it (theme, home screen, library view) */
-    void onSettingsClosed();
 
     // Name of the signed-in user (header avatar).
     void setUserName(const std::string& name) {
@@ -219,7 +216,7 @@ private:
     bool detailWideThumb() const { return detailIsEpisode || detailReturnState == State::SpecialsReady; }
     std::vector<std::string> detailLines;    // pre-computed word-wrapped overview (built once)
     /* the whole overview, in a panel over the page (- or A on it) */
-    static const int DETAIL_OV_LINES = 5, OV_PANEL_SIZE = 15, OV_PANEL_W = 500, OV_PANEL_ROWS = 13;
+    static const int DETAIL_OV_LINES = 4, OV_PANEL_SIZE = 15, OV_PANEL_W = 500, OV_PANEL_ROWS = 13;
     std::vector<std::string> overviewAll;
     bool overviewCut   = false;   // the page shows only part of it
     bool overviewPanel = false;

@@ -31,7 +31,7 @@ extern unsigned int  data_cacert_pem_len;
 
 #include "../version.h"
 /* Sent with every request; one per console, see setDeviceId() */
-static std::string s_deviceId = "wiifin-wii";
+static std::string s_deviceId = "wiiflix-wii";
 
 void JellyfinClient::setDeviceId(const std::string& id) { if (!id.empty()) s_deviceId = id; }
 const std::string& JellyfinClient::deviceId() { return s_deviceId; }
@@ -1538,6 +1538,8 @@ bool JellyfinClient::getChapterImageBytes(const std::string& serverUrl, const Je
     return httpRequest(serverUrl + qs, "GET", "", "", auth.accessToken, outBytes) == 200;
 }
 
+static float jsonGetFloat(const std::string& json, const char* key);   /* below */
+
 bool JellyfinClient::getItemDetail(const std::string& serverUrl,
                                     const JellyfinAuth& auth,
                                     const std::string& itemId,
@@ -1555,6 +1557,7 @@ bool JellyfinClient::getItemDetail(const std::string& serverUrl,
     out.name                  = jsonGetString(resp, "Name");
     out.overview              = jsonGetString(resp, "Overview", true);   /* its paragraphs */
     out.officialRating        = jsonGetString(resp, "OfficialRating");
+    out.communityRating       = jsonGetFloat(resp,  "CommunityRating");
     out.year                  = jsonGetInt(resp,    "ProductionYear");
     out.runtimeTicks          = jsonGetLongLong(resp, "RunTimeTicks");
     out.playbackPositionTicks = jsonGetLongLong(resp, "PlaybackPositionTicks");

@@ -1418,7 +1418,7 @@ bool homeMenu()
         { Guard g; frame(); }
         GRRLIB_Render();
     }
-    const bool leave = doShowHomeOverlay(Ui::font(), nullptr, S->cursor, false);
+    const bool leave = doShowHomeOverlay(Ui::font(), nullptr, S->cursor);
     if (!leave && !wasPaused && g_mplayer_paused) wii_player_pause_toggle();
     Guard g;
     S->lastInput = nowMs();
@@ -1564,7 +1564,7 @@ bool MusicPlayerView::run()
     if (tracks.empty()) return false;
     (void)font;
     /* a session playing gives way; the menu music's place kept either way */
-    const bool menuMusic = MusicSession::stop(false) || MusicBGM::isRunning();
+    const bool menuMusic = MusicSession::stop(false);
     MusicBGM::pause();   /* ASND off: the audio is MPlayer's */
 
     S = new Session();

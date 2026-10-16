@@ -511,11 +511,11 @@ void LibraryView::loadDetail() {
         SYS_Report("[Detail] %d versions\n", (int)detail.versions.size());
     }
 
-    // The overview: five lines on the page (13 px in 390 - 12), all of it
-    // in the panel that - opens when it does not fit
-    detailLines   = wrapText(detail.overview, 13, 378, DETAIL_OV_LINES);
+    // The overview: four lines across the page (14 px in 640 - 2 * 24), all
+    // of it in the panel that - opens when it does not fit
+    detailLines   = wrapText(detail.overview, 14, 592, DETAIL_OV_LINES);
     overviewAll   = wrapText(detail.overview, OV_PANEL_SIZE, OV_PANEL_W, 0);
-    overviewCut   = (int)wrapText(detail.overview, 13, 378, DETAIL_OV_LINES + 1).size() > DETAIL_OV_LINES;
+    overviewCut   = (int)wrapText(detail.overview, 14, 592, DETAIL_OV_LINES + 1).size() > DETAIL_OV_LINES;
     overviewPanel = false;
     overviewTop   = 0;
 }
@@ -1455,8 +1455,7 @@ bool LibraryView::render(ir_t& ir) {
     if (!loading) loadingSince = spinnerSince = 0;
     Ui::background(!loading);
     if (loading) {
-        if (ringTex) Ui::spinner(ringTex, 320, 240);
-        else         Ui::textCentered(320, 200, tr("Loading..."), 22, p.textDim);
+        Ui::spinner(ringTex, 320, 240);
         drawCursor(ir);
         return true;
     }

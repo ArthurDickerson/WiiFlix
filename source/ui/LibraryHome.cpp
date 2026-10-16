@@ -469,15 +469,15 @@ void LibraryView::renderGlobalFavorites(ir_t& ir) {
 }
 
 /* ---------------------------------------------------------------
- * The profile menu, A on the avatar: back to the libraries, the profiles,
- * the settings (signed in still), or WiiFin's own menu
+ * The profile menu (2): back to the libraries, the profiles, or the
+ * WiiFlix menu
  * --------------------------------------------------------------- */
-static const char* const PROFILE_MENU[5] = {
-    N_("Now Playing"), N_("Back to Jellyfin"), N_("Switch Profile"), N_("Settings"), N_("WiiFlix Menu")
+static const char* const PROFILE_MENU[4] = {
+    N_("Now Playing"), N_("Back to Jellyfin"), N_("Switch Profile"), N_("WiiFlix Menu")
 };
 /* Now Playing, first, while a music session plays */
 static int pmFirst() { return MusicSession::active() ? 0 : 1; }
-static int pmCount() { return 5 - pmFirst(); }
+static int pmCount() { return 4 - pmFirst(); }
 static const int PM_W = 300, PM_BH = 42, PM_STEP = 54;
 static int pmTop() { return 240 - (pmCount() * PM_STEP + 50) / 2 + 50; }
 
@@ -510,10 +510,9 @@ bool LibraryView::updateProfileMenu(ir_t& ir) {
     case 0: exitTo = Exit::NowPlaying; break;
     case 1: SoundFX::play(SoundFX::FX::Back); return false;
     case 2: exitTo = Exit::Profiles;   break;
-    case 3: exitTo = Exit::Settings;   break;
     default: exitTo = Exit::WiiFinMenu; break;
     }
-    SoundFX::play(entry == 3 || entry == 0 ? SoundFX::FX::Open : SoundFX::FX::Back);
+    SoundFX::play(entry == 0 ? SoundFX::FX::Open : SoundFX::FX::Back);
     return true;
 }
 
@@ -534,10 +533,3 @@ void LibraryView::renderProfileMenu(ir_t& ir) {
     Ui::footer(l, 1, r, 1);
 }
 
-void LibraryView::onSettingsClosed() {
-    /* the home again, rebuilt as the settings left it */
-    avatarFocus = false;
-    browse.invalidate();
-    catalog.invalidate();
-    state = State::LibsReady;
-}

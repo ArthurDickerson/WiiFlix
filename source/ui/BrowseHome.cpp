@@ -46,9 +46,8 @@ static const char* pillLabel(int i, bool catalog)
 
 static u32 lerpCol(u32 a, u32 b, float t) { return Ui::mix(a, b, t); }
 
-/* Colours of the carousel home.  Flix keeps the look of the old video
- * channels (grey band, light info panel, white pills on the red header);
- * the other themes take everything from their palette. */
+/* Colours of the carousel home, from the palette; Flix adds the red header
+ * band with white pills on it, and red stars. */
 struct Look {
     bool band;                                   /* red header band (Flix) */
     u32  bandTop, bandBottom, bandEdge;          /* focused-row panel      */
@@ -66,21 +65,9 @@ static Look look()
 {
     const Ui::Palette& p = Ui::pal();
     Look l;
-    if (Ui::theme() == Ui::Theme::Flix) {
-        l = Look{ true,
-            0x6A6A6AFF, 0x474747FF, 0xFFFFFF30,
-            0xFFFFFFFF, 0xA0A0A0FF, 0x6A6A6AFF,
-            0x505050FF, 0x3A3A3AFF, 0x2A2A2AFF, 0x202020FF, 0xC8C8C8FF, 0x707070FF,
-            0xFFFFFFFF, 0x00000060, 0x00000090, 0x00000070, 0xFFFFFFE0,
-            0xF5F5F5FF, 0xC6C6C6FF, 0x8A8A8AFF, 0x262626FF, 0x3E3E3EFF,
-            0xD81F26FF, 0xA9A9A9FF,
-            0xFFFFFFFF, 0x00000070,
-            0xFFFFFFFF, 0xCFCFCFFF, 0x5E5E5EFF, 0xFFFFFFFF, 0x333333FF, 0xFFFFFFB0,
-            0x111111FF };
-        return l;
-    }
-    const bool light = Ui::theme() == Ui::Theme::Light;
-    l.band        = false;
+    const bool flix  = Ui::theme() == Ui::Theme::Flix;
+    const bool light = flix || Ui::theme() == Ui::Theme::Light;
+    l.band        = flix;
     l.bandTop     = Ui::alpha(p.cardTop, 0.80f);
     l.bandBottom  = Ui::alpha(p.cardBottom, 0.80f);
     l.bandEdge    = Ui::alpha(p.cardBorder, 0.70f);
@@ -101,6 +88,12 @@ static Look look()
     l.pillTop     = p.cardTop;     l.pillBottom  = p.cardBottom;  l.pillBorder  = p.cardBorder;
     l.pillFocus   = p.accent;      l.pillText    = p.text;        l.pillGlow    = p.glow;
     l.floor       = p.bgBottom;
+    if (flix) {
+        /* white pills on the red band, red stars */
+        l.pillTop     = 0xFFFFFFFF;  l.pillBottom = 0xD6D6D6FF;  l.pillBorder = 0x00000050;
+        l.pillFocus   = 0xFFFFFFFF;  l.pillGlow   = 0xFFFFFFB0;
+        l.starOn      = p.accent;
+    }
     return l;
 }
 
@@ -232,13 +225,13 @@ void BrowseHome::buildHome(const std::vector<JellyfinLibrary>& libs)
     snprintf(q, sizeof(q),
              "/Users/%s/Items?Filters=IsFavorite&Recursive=true"
              "&IncludeItemTypes=Movie,Series,Episode&SortBy=SortName&Limit=%d", uid.c_str(), MAX_ITEMS);
-    add(tr("My Favorites"), q, false);
+    add(tr("Instant Queue"), q, false);
     snprintf(q, sizeof(q),
              "/Users/%s/Items?Filters=IsFavorite&Recursive=true"
              "&IncludeItemTypes=MusicAlbum&SortBy=SortName&Limit=%d", uid.c_str(), MAX_ITEMS);
     add(tr("Favorite Albums"), q, true);
     int favs = 0;
-    for (const auto& r : rows) if (r.title == tr("My Favorites")) favs = (int)r.items.size();
+    for (const auto& r : rows) if (r.title == tr("Instant Queue")) favs = (int)r.items.size();
     SYS_Report("[Home] %d rows, %d favourite titles\n", (int)rows.size(), favs);
 }
 

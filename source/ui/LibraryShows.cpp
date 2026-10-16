@@ -116,7 +116,7 @@ bool LibraryView::updateEpisodes(ir_t& ir, bool aPressed) {
 void LibraryView::renderSeasons(ir_t& ir) {
     const Ui::Palette& p = Ui::pal();
     drawBreadcrumb(currentSeriesName, 20, seriesFavorite ? 480 : 580);
-    if (seriesFavorite) Ui::textRight(620, 16, (std::string("\xe2\x99\xa5 ") + tr("Favorite")).c_str(), 16, 0xE8455AFF);
+    if (seriesFavorite) Ui::textRight(620, 16, (std::string("\xe2\x99\xa5 ") + tr("In Queue")).c_str(), 16, Ui::RED);
     headerLine(46);
 
     int n = (int)seasons.size();
@@ -168,7 +168,7 @@ void LibraryView::renderSeasons(ir_t& ir) {
         }
     }
     const Ui::Hint l[] = { { "A", N_("Select") }, { "2", N_("Shuffle") }, { "B", N_("Back") } };
-    const Ui::Hint r[] = { { "1", seriesFavorite ? N_("Unfavorite") : N_("Favorite") } };
+    const Ui::Hint r[] = { { "1", seriesFavorite ? N_("Remove from Queue") : N_("Add to Queue") } };
     Ui::footer(l, 3, r, 1);
 }
 

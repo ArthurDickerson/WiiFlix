@@ -12,7 +12,7 @@
 #include "../ui/ConnectView.h"
 #include "../ui/MusicPlayerView.h"
 #include "../ui/ProfileView.h"
-#include "../ui/SettingsView.h"
+#include "../ui/ScreenArea.h"
 #include "../ui/LibraryView.h"
 #include "../jellyfin/JellyfinClient.h"
 #include "../jellyfin/RemoteControl.h"
@@ -294,19 +294,18 @@ void App::init(const char* argv0) {
             u32 h = 2166136261u;
             for (int i = 0; i < 4; ++i) h = (h ^ ((id >> (i * 8)) & 0xFF)) * 16777619u;
             char buf[24];
-            snprintf(buf, sizeof(buf), "wiifin-%08x", (unsigned)h);
+            snprintf(buf, sizeof(buf), "wiiflix-%08x", (unsigned)h);
             JellyfinClient::setDeviceId(buf);
         }
     }
     loadSettings();
     /* DHCP takes a few seconds: get it going while the menus show */
     jellyfinClient.startNetwork();
-    /* the SD card's sounds/ folder, next to wiifin.cfg, may replace the
-     * built-in sounds and music */
+    /* the SD card's sounds/ folder, next to wiiflix.cfg, may replace the
+     * built-in sounds (no music: WiiFlix has none) */
     {
         std::string dir = settingsPath.empty() ? "" : settingsPath.substr(0, settingsPath.rfind('/') + 1);
-        MusicBGM::loadCustom(dir.c_str());
-        MusicBGM::init(musicEnabled);
+        MusicBGM::init();
         SoundFX::init(dir.c_str());
     }
 }
@@ -392,13 +391,12 @@ void App::offerScreenCalibration(ir_t& ir) {
         }
         if (Input::isAJustPressed()) {
             SoundFX::play(SoundFX::FX::Start);
-            SettingsView sv(btnTex, font, jellyfinClient, musicEnabled);
-            sv.startCalibration();
-            while (sv.isCalibrating() && !g_app_powerOff && !g_app_reset) {
+            ScreenArea sa;
+            while (!g_app_powerOff && !g_app_reset) {
                 Input::update();
                 Input::readIR(ir);
-                sv.update(ir);
-                sv.render(ir);
+                if (!sa.update()) break;
+                sa.render();
                 drawPointer();
                 GRRLIB_Render();
             }
@@ -408,9 +406,7 @@ void App::offerScreenCalibration(ir_t& ir) {
         Ui::card(70, 120, 500, 190, 18, 0.0f);
         Ui::textCentered(320, 140, tr("Does the whole picture fit your TV?"), 22, p.text);
         Ui::textCentered(320, 182, tr("Older TVs (CRT) often cut the edges of the picture."), 15, p.textDim);
-        /* TRANSLATORS: one sentence on two lines, the second one naming the menu */
-        Ui::textCentered(320, 204, tr("You can shrink it to fit now, or later in"), 15, p.textDim);
-        Ui::textCentered(320, 226, tr("Settings > Screen Area."), 15, p.textDim);
+        Ui::textCentered(320, 204, tr("Adjust shrinks the picture to fit your screen."), 15, p.textDim);
         Ui::button(bx[0], BY, BW2, BH2, N_("Adjust"), 18, sel == 0 ? Ui::pulse() : 0.0f);
         Ui::button(bx[1], BY, BW2, BH2, N_("Not now"), 18, sel == 1 ? Ui::pulse() : 0.0f);
         const Ui::Hint l2[] = { { "A", N_("Select") } };
@@ -431,13 +427,13 @@ void App::loop() {
     float menuFocus[MENU_COUNT] = {};
     const std::string menuItems[] = {
         N_("Connect To Jellyfin"),
-        N_("Settings"),
+        N_("Sign Out"),
         N_("Exit")
     };
 
     /* Thin wrapper so existing call sites don't need to change. */
     auto showHomeOverlay = [&]() -> bool {
-        return doShowHomeOverlay(font, btnTex, cursorPointerTex, musicEnabled);
+        return doShowHomeOverlay(font, btnTex, cursorPointerTex);
     };
 
     /* ---- Helper: wait for the network (started at boot), offering a retry
@@ -554,14 +550,8 @@ void App::loop() {
                 SoundFX::play(SoundFX::FX::Back);
                 if (wantsExit) { running = false; return; }
                 lv.onPlaybackFinished("");
-            } else if (lv.exitTo == LibraryView::Exit::Settings) {
-                /* Settings from the profile menu: signed in still */
-                lv.exitTo = LibraryView::Exit::Profiles;
-                runSettings(&p);
-                if (!running) return;
-                lv.onSettingsClosed();
             } else {
-                /* the profile closes: its music with it, the menu music back */
+                /* the profile closes: its music with it */
                 MusicSession::stop(true);
                 if (lv.exitTo == LibraryView::Exit::WiiFinMenu) {
                     toMainMenu = true;
@@ -613,7 +603,7 @@ void App::loop() {
             if (found < 0) {
                 profiles.push_back(p);
                 found = (int)profiles.size() - 1;
-                runOnboarding(profiles[found]);   /* sign-in, home screen, library view */
+                runOnboarding(profiles[found]);   /* how it signs in */
                 if (g_app_powerOff || g_app_reset) { running = false; return; }
             }
             saveSettings();
@@ -725,7 +715,7 @@ void App::loop() {
                     break;
                 }
                 case 1:
-                    runSettings(nullptr);   /* WiiFin's own look, and the system */
+                    signOut();
                     break;
                 case 2: running = false; break;
             }

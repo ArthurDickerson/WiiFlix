@@ -12,7 +12,7 @@
 using namespace LibDraw;
 
 static const char* const SORTS[] = { N_("Name"), N_("Year"), N_("Rating"), N_("Date added") };
-static const char* const SHOWS[] = { N_("All"), N_("Not watched"), N_("Watched"), N_("Favorites") };
+static const char* const SHOWS[] = { N_("All"), N_("Not watched"), N_("Watched"), N_("In Queue") };
 
 bool LibraryView::sortable() const
 {

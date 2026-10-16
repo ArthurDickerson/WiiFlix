@@ -172,9 +172,8 @@ bool runPlaySession(JellyfinClient& client,
     JellyfinClient::PlaybackChoice how = lv.pendingPlayHow;
     bool allowDirect = true;
 
-    /* ao_gekko needs the DSP: no menu music while a video plays. */
-    /* the music session stops (the menu music's place kept) */
-    bool musicWasRunning = MusicSession::stop(false) || MusicBGM::isRunning();
+    /* ao_gekko needs the DSP: the music session stops, ASND goes off */
+    MusicSession::stop(false);
     MusicBGM::pause();
 
     PlayerView view(font, cursorTex, ringTex);
@@ -599,7 +598,7 @@ bool runPlaySession(JellyfinClient& client,
             case PlayerView::Action::Home: {
                 bool wasPaused = g_mplayer_paused;
                 if (!wasPaused) wii_player_pause_toggle();
-                if (doShowHomeOverlay(font, btnTex, cursorTex, false))
+                if (doShowHomeOverlay(font, btnTex, cursorTex))
                     requestStop(PLAYER_STOP_WIIMENU, N_("Stopping..."));
                 else if (!wasPaused)
                     wii_player_pause_toggle();
@@ -788,9 +787,9 @@ bool runPlaySession(JellyfinClient& client,
     /* ---- Leave the player ---- */
     client.videoQuality = savedQuality;
     lastItemId = itemId;
-    /* Bring the menu music back now so it plays during the final requests. */
+    /* the menus' audio back now: their sounds during the final requests */
     MusicBGM::stop();
-    MusicBGM::init(musicWasRunning);
+    MusicBGM::init();
     runWithPlayerUI(view, ir, N_("Stopping..."), [&]() {
         if (g_wiifin_stream_fail_status >= 500) client.logTranscodeFailure(serverUrl, auth);
         if (!reported && posTicks > 0)
