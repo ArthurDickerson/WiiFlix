@@ -6,19 +6,18 @@
 
 ---
 
-**WiiFLIX** is a homebrew [Jellyfin](https://jellyfin.org) client for the Nintendo Wii, for **movies and TV shows**. It is a fork of [WiiFin](https://github.com/fabienmillet/WiiFin), restyled after the video channels the Wii had in its day: a red header, one line of cover art at a time, a simple details page, and a player you drive with the pointer.
+**WiiFLIX** is a homebrew [Jellyfin](https://jellyfin.org) client for the Nintendo Wii, for **movies and TV shows** meant to replicate the original Wii Netflix app. It is a fork of [WiiFin](https://github.com/fabienmillet/WiiFin).
 
 Written in C++ with [GRRLIB](https://github.com/GRRLIB/GRRLIB) and [MPlayer CE](https://github.com/extremscorner/mplayer-ce). Runs from the Homebrew Channel or as its own channel on the Wii Menu.
 
 ## ✨ Features
 
-- **A line of covers, one row at a time**: Continue Watching, your **Instant Queue** (the titles you favourited in Jellyfin), then a row for every genre of your movies and TV shows. Point at a cover to enlarge it, click to open it; click the row's name to jump to any row from a list.
+- **A line of covers, one row at a time**: Continue Watching, your **Instant Queue** (the titles you favorited in Jellyfin), then a row for every genre of your movies and TV shows. Point at a cover to enlarge it, click to open it; click the row's name to jump to any row from a list.
 - **Details page**: Play, Add to Queue, star rating, age rating, year and running time, the overview, cast, director and genres; audio and subtitle tracks (and versions) picked from a list.
 - **Player**: a scrub bar with the server's thumbnails, ±10 s steps, resume where you stopped, skip intro / recap / credits, next and previous episode, audio and subtitle tracks, picture zoom.
 - **Direct play** of what the Wii can decode (SD DivX/Xvid, H.264 up to 480p, MPEG-1/2, VP8); the server converts the rest. See [DIRECT_PLAY.md](DIRECT_PLAY.md).
-- **Sign in** with your username and password, with **Quick Connect**, or by finding the server on your network. Several **profiles** (accounts and servers), each with an optional passcode.
+- **Sign in** with your username and password, with **Quick Connect**, or by finding the server on your network. Several **profiles** (accounts and servers).
 - **Search** across your movies, series and episodes.
-- **Remote control** from Jellyfin's apps and dashboard ("Play on…").
 - The **Wii's languages** (English and nine translations), the **Wii Remote** (pointer or D-pad), **Classic Controller**, **GameCube controller**, and the Wii U GamePad in a Virtual Console inject.
 
 ## 📦 Install
@@ -70,14 +69,14 @@ With the Wii Remote: point and press **A** on anything on the screen, or use the
 | D-pad Up / Down | Volume |
 | **−** / **+** | Previous / next episode |
 | **1** / **2** | Audio track / subtitles |
-| **B** | Back to the details page (with the controls hidden, the first press shows them) |
+| **B** | Back to the details page |
 | Pointer | Click the bar to jump there; the arrows step 10 s |
 
 **HOME** opens the Wii's HOME Menu anywhere.
 
 ## ⚠️ Status
 
-WiiFLIX is **experimental**: it works, but expect rough edges on real hardware.
+WiiFLIX is **experimental**: it works, but expect rough edges.
 
 - Direct play covers SD videos only; HD files are converted by the server. Stereo sound.
 - Picture subtitles (PGS, VobSub) are burned in by the server.
