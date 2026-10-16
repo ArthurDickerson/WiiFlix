@@ -16,7 +16,7 @@
 
 // Tab bar (drawn by renderBackground, hit-tested by update): three equal
 // segments, centred
-static const float TAB_W = 180, TAB_X0 = (640 - 3 * TAB_W) / 2, TAB_Y = 52, TAB_H = 30;
+static const float TAB_W = 180, TAB_X0 = (640 - 3 * TAB_W) / 2, TAB_Y = 62, TAB_H = 30;   /* under the band (58) */
 
 // USB keyboard callback — appends char to a shared buffer
 
@@ -260,16 +260,16 @@ ConnectResult ConnectView::update(ir_t& ir) {
             // IR click: focus a field or submit
             if (ir.valid && aPressed) {
                 bool irFieldHandled = false;
-                // Field hit areas (from renderCredentials): y=110, y=180, y=250, button y=330
+                // Field hit areas (from renderCredentials): y=118, y=188, y=258, button y=338
                 if (ir.x >= 80 && ir.x <= 560) {
-                    if      (ir.y >= 100 && ir.y <= 145) { focusedField = Field::Server;   kbActive = true; kb.reset(); irFieldHandled = true; irMode = true; }
-                    else if (ir.y >= 170 && ir.y <= 215) { focusedField = Field::Username;  kbActive = true; kb.reset(); irFieldHandled = true; irMode = true; }
-                    else if (ir.y >= 240 && ir.y <= 285) { focusedField = Field::Password;  kbActive = true; kb.reset(); irFieldHandled = true; irMode = true; }
+                    if      (ir.y >= 108 && ir.y <= 153) { focusedField = Field::Server;   kbActive = true; kb.reset(); irFieldHandled = true; irMode = true; }
+                    else if (ir.y >= 178 && ir.y <= 223) { focusedField = Field::Username;  kbActive = true; kb.reset(); irFieldHandled = true; irMode = true; }
+                    else if (ir.y >= 248 && ir.y <= 293) { focusedField = Field::Password;  kbActive = true; kb.reset(); irFieldHandled = true; irMode = true; }
                 }
-                // Connect button: centered at x=320, y=330, 200x48
+                // Connect button: centered at x=320, y=338, 200x48
                 if (!irFieldHandled &&
                     ir.x >= 220 && ir.x <= 420 &&
-                    ir.y >= 330 && ir.y <= 378) {
+                    ir.y >= 338 && ir.y <= 386) {
                     focusedField = Field::SubmitBtn; irFieldHandled = true; irMode = true;
                     goto doSubmit;
                 }
@@ -588,21 +588,21 @@ void ConnectView::renderCredentials(ir_t& ir) {
     int hover = -1;
     if (ir.valid && !kbActive) {
         if (ir.x >= 80 && ir.x <= 560) {
-            if      (ir.y >= 100 && ir.y <= 145) hover = (int)Field::Server;
-            else if (ir.y >= 170 && ir.y <= 215) hover = (int)Field::Username;
-            else if (ir.y >= 240 && ir.y <= 285) hover = (int)Field::Password;
+            if      (ir.y >= 108 && ir.y <= 153) hover = (int)Field::Server;
+            else if (ir.y >= 178 && ir.y <= 223) hover = (int)Field::Username;
+            else if (ir.y >= 248 && ir.y <= 293) hover = (int)Field::Password;
         }
-        if (ir.x >= 220 && ir.x <= 420 && ir.y >= 330 && ir.y <= 378) hover = (int)Field::SubmitBtn;
+        if (ir.x >= 220 && ir.x <= 420 && ir.y >= 338 && ir.y <= 386) hover = (int)Field::SubmitBtn;
     }
     auto lit = [&](Field f) {
         return !kbActive && (hover >= 0 ? hover == (int)f : focusedField == f);
     };
-    drawField(N_("Server URL"), fx, 110, fw, fields[0], lit(Field::Server),   false);
-    drawField(N_("Username"),   fx, 180, fw, fields[1], lit(Field::Username), false);
-    drawField(N_("Password"),   fx, 250, fw, fields[2], lit(Field::Password), true);
+    drawField(N_("Server URL"), fx, 118, fw, fields[0], lit(Field::Server),   false);
+    drawField(N_("Username"),   fx, 188, fw, fields[1], lit(Field::Username), false);
+    drawField(N_("Password"),   fx, 258, fw, fields[2], lit(Field::Password), true);
 
     // Submit button
-    drawButton(320, 330, 200, 48, N_("Connect"), lit(Field::SubmitBtn));
+    drawButton(320, 338, 200, 48, N_("Connect"), lit(Field::SubmitBtn));
 
     if (kbActive) {
         renderVKB(ir);

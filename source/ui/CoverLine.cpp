@@ -17,7 +17,7 @@ GRRLIB_texImg* loadJPEGTexture(const u8* data, u32 size);
 /* ---- Layout (640x480 column; the bars and the line span the whole
  * screen, which is wider in 16:9 — see Ui::screenLeft/Right) ------------- */
 static const float CENTER_X  = 320.0f;
-static const float CENTER_Y  = 205.0f;   /* middle of the cover line        */
+static const float CENTER_Y  = 214.0f;   /* middle of the cover line        */
 static const float BIG_W     = 140.0f, BIG_H   = 210.0f;   /* selected, 2:3 */
 static const float SMALL_W   =  96.0f, SMALL_H = 144.0f;   /* the others    */
 static const float GAP       = 14.0f;
@@ -26,17 +26,18 @@ static const float LINE_SIDE = 24.0f;   /* the line's margin at the screen edges
 
 /* under the red band (Ui::headerBand, the logo on it): the row's name in a
  * long bar under it, the Up/Down pill beside it */
-static const float BAR_Y     = 54.0f, BAR_H = 30.0f;
+static const float BAR_Y     = 68.0f, BAR_H = 30.0f;
 static const float BAR_SIDE  = 20.0f;    /* from the screen edges            */
 static const float SWITCH_W  = 76.0f;    /* the ▼▲ pill                      */
 static const float SWITCH_GAP = 10.0f;
 
-static const float SCRUB_Y   = 336.0f;   /* centre line of the scrub bar     */
+static const float SCRUB_Y   = 344.0f;   /* centre line of the scrub bar     */
 static const float KNOB_R    = 11.0f;
 static const float ARROW_X   = 38.0f;    /* arrow centres, from the edges    */
 static const float ARROW_W   = 36.0f, ARROW_H = 28.0f;   /* the old channels' arrowheads */
-static const float TITLE_Y   = 360.0f;   /* selected title, under the bar    */
-static const float META_Y    = 390.0f;   /* its details, stars, rating, n/N  */
+static const float TITLE_Y   = 368.0f;   /* selected title, under the bar    */
+static const float META_Y    = 397.0f;   /* its details, stars, rating, n/N  */
+static const float HINTS_Y   = 452.0f;   /* the buttons named, bottom edge   */
 
 /* Covers kept in memory around a row's selection (each side) */
 static const int   WIN_CURRENT  = 9;
@@ -455,9 +456,9 @@ static void pill(float x, float y, float w, float h, bool hot)
  * it can't be picked), the page pill at the bottom (◀ 2/3 ▶), a ✕ at the
  * top right */
 static const int   MENU_ROWS  = 8;
-static const float MENU_Y     = 50, MENU_H = 420;
+static const float MENU_Y     = 62, MENU_H = 408;
 static const float HEAD_Y     = MENU_Y + 10;      /* the row shown, its line */
-static const float MENU_ROW0  = 98, MENU_STEP = 37, MENU_ROW_H = 31;
+static const float MENU_ROW0  = 112, MENU_STEP = 37, MENU_ROW_H = 31;
 static const float PAGE_W     = 200, PAGE_H = 34, PAGE_Y = MENU_Y + MENU_H - 48;
 static float menuX() { return Ui::screenLeft() + 36; }
 static float menuW() { return Ui::screenWidth() - 72; }
@@ -1071,6 +1072,16 @@ void CoverLine::render(const ir_t& ir)
         /* loading: the five blocks */
         Ui::spinner(nullptr, CENTER_X, CENTER_Y);
         Ui::textCentered(CENTER_X, CENTER_Y + 24, tr("Loading..."), 14, p.textDim);
+    }
+
+    /* the buttons for the rest, along the bottom edge: 1 Search, 2 the
+     * WiiFLIX menu (the profile menu) */
+    {
+        static const Ui::Hint h[] = { { "1", N_("Search") }, { "2", N_("WiiFLIX Menu") } };
+        float w = 0;
+        for (const Ui::Hint& x : h) w += Ui::hintWidth(x);
+        float x = CENTER_X - (w - 14) * 0.5f;   /* a hint's width ends in its gap */
+        for (const Ui::Hint& hh : h) x += Ui::hint(x, HINTS_Y, hh);
     }
 
     if (menuOpen) drawMenu();   /* the list of rows, over everything */

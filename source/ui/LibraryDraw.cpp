@@ -157,23 +157,24 @@ u32 headerDim() {
 void drawBreadcrumb(const std::string& title, int size, int maxW) {
     const Ui::Palette& p = Ui::pal();
     const bool band = Ui::headerBand() > 0;
-    const float x = band ? Ui::bandLeft() : 20, cy = 14 + size * 0.55f;
+    const float ty = band ? (Ui::headerBand() - size) * 0.5f : 14;   /* centred in the band */
+    const float x = band ? Ui::bandLeft() : 20, cy = ty + size * 0.55f;
     Ui::triangle(x, cy, x + 8, cy - 7, x + 8, cy + 7, band ? 0xFFFFFFFF : p.accent);
     std::string t = fitText(Ui::font(), filterDejaVu(title, 60), size, maxW - 14 - (int)(x - 20));
-    Ui::text(x + 14, 14, t.c_str(), size, band ? 0xFFFFFFFF : p.text);
+    Ui::text(x + 14, ty, t.c_str(), size, band ? 0xFFFFFFFF : p.text);
 }
 
 void drawCount(int page, int perPage, int shown, int total) {
     char countStr[48];
     snprintf(countStr, sizeof(countStr), "%d-%d / %d",
              page * perPage + 1, page * perPage + shown, total);
-    Ui::textRight(620, 18, countStr, 15, headerDim());
+    Ui::textRight(620, Ui::headerBand() > 0 ? (Ui::headerBand() - 15) * 0.5f : 18, countStr, 15, headerDim());
 }
 
 // Tabbed library header: tabs centred, breadcrumb in the room on the left.
 void drawLibHeader(const std::string& libName, const char* const* tabNames,
                    int nTabs, int sel) {
-    float x0 = Ui::tabs(320, 10, tabNames, nTabs, sel, 13);
+    float x0 = Ui::tabs(320, Ui::headerBand() > 0 ? (Ui::headerBand() - 26) * 0.5f : 10, tabNames, nTabs, sel, 13);
     drawBreadcrumb(libName, 16, (int)x0 - 34 - 10);
     headerLine(46);
 }

@@ -421,7 +421,7 @@ void LibraryView::renderGlobalFavorites(ir_t& ir) {
  * WiiFlix menu
  * --------------------------------------------------------------- */
 static const char* const PROFILE_MENU[3] = {
-    N_("Back to Jellyfin"), N_("Switch Profile"), N_("WiiFlix Menu")
+    N_("Back to WiiFLIX"), N_("Switch Profile"), N_("WiiFLIX Menu")
 };
 static int pmCount() { return 3; }
 static const int PM_W = 300, PM_BH = 42, PM_STEP = 54;
@@ -430,6 +430,7 @@ static int pmTop() { return 240 - (pmCount() * PM_STEP + 50) / 2 + 50; }
 void LibraryView::openProfileMenu() {
     profileMenu = true;
     profileMenuSel = 0;
+    profileMenuHover = -1;
     for (float& f : profileMenuFocus) f = 0.0f;
     SoundFX::play(SoundFX::FX::Open);
     SYS_Report("[WiiFin] profile menu\n");
@@ -446,9 +447,12 @@ bool LibraryView::updateProfileMenu(ir_t& ir) {
             const int by = pmTop() + i * PM_STEP;
             if (ir.x >= 320 - PM_W / 2 && ir.x <= 320 + PM_W / 2 && ir.y >= by && ir.y <= by + PM_BH) hover = i;
         }
-    if (hover >= 0) profileMenuSel = hover;
+    /* one choice: the pointer takes it when it moves onto another button,
+     * the D-pad moves it even with the pointer on the screen */
+    if (hover >= 0 && hover != profileMenuHover) profileMenuSel = hover;
+    profileMenuHover = hover;
     if (profileMenuSel != was) SoundFX::play(SoundFX::FX::Move);
-    if (!Input::isAJustPressed() || (ir.valid && hover < 0)) return false;
+    if (!Input::isAJustPressed()) return false;   /* A takes the choice, wherever the pointer is */
     profileMenu = false;
     switch (profileMenuSel) {
     case 0: SoundFX::play(SoundFX::FX::Back); return false;
@@ -467,9 +471,10 @@ void LibraryView::renderProfileMenu(ir_t& ir) {
     Ui::avatar(320 - PM_W / 2 + 4, top - 38, 15.0f, userName.c_str(), 0.0f);
     Ui::text(320 - PM_W / 2 + 28, top - 49, filterDejaVu(userName, 30).c_str(), 18, p.text);
     for (int i = 0; i < n; ++i) {
+        /* rectangular, the choice orange (and a little bigger), steady */
         profileMenuFocus[i] = Ui::approach(profileMenuFocus[i], i == profileMenuSel ? 1.0f : 0.0f);
         Ui::button(320 - PM_W / 2, top + i * PM_STEP, PM_W, PM_BH, PROFILE_MENU[i], 18,
-                   profileMenuFocus[i] > 0.01f ? Ui::pulse() * profileMenuFocus[i] : 0.0f);
+                   profileMenuFocus[i], 3);
     }
     const Ui::Hint l[] = { { "A", N_("Select") } };
     const Ui::Hint r[] = { { "B", N_("Back") } };

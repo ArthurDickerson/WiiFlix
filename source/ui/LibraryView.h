@@ -166,7 +166,7 @@ private:
     // Items list
     static const int ROW_H  = 46;
     static const int LIST_X = 40;
-    static const int LIST_Y = 58;
+    static const int LIST_Y = 66;   /* under the band (58) */
     static const int LIST_W = 560;
 
     // Poster grid: 4 columns × 2 rows = 8 posters per page
@@ -177,13 +177,13 @@ private:
     static const int POSTER_W        = 130;
     static const int POSTER_H        = 185;
     static const int POSTER_X0       = 15;
-    static const int POSTER_Y0       = 50;
+    static const int POSTER_Y0       = 64;   /* under the band (58) */
     static const int POSTER_STRIDE_X = 150; // POSTER_W + 20
     static const int POSTER_STRIDE_Y = 193; // POSTER_H + 8 (no title text below)
     // Page arrow buttons rendered to the right of the poster grid
     static const int ARROW_CX        = 617; // horizontal centre of arrow triangles
-    static const int ARROW_UP_CY     = 143; // vertical centre — aligns with row 0
-    static const int ARROW_DN_CY     = 335; // vertical centre — aligns with row 1
+    static const int ARROW_UP_CY     = 157; // vertical centre — aligns with row 0
+    static const int ARROW_DN_CY     = 349; // vertical centre — aligns with row 1
     static const int ARROW_HIT_R     = 17;  // hit-test radius (x and y)
     int posterSel = 0;
     GRRLIB_texImg* posterTextures[8] = {};
@@ -265,6 +265,7 @@ private:
      * WiiFin's menu */
     bool  profileMenu        = false;
     int   profileMenuSel     = 0;
+    int   profileMenuHover   = -1;   /* the button under the pointer last frame */
     float profileMenuFocus[5] = {};
     void openProfileMenu();
     bool updateProfileMenu(ir_t& ir);

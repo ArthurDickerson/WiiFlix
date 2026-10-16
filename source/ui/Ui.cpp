@@ -400,7 +400,7 @@ void background(bool withBand)
     if (withBand) drawHeaderBand();
 }
 
-float headerBand() { return s_theme == Theme::Flix ? 44.0f : 0.0f; }
+float headerBand() { return s_theme == Theme::Flix ? 58.0f : 0.0f; }   /* the channel's band, measured */
 
 /* the logo at the band's left: every screen's */
 static GRRLIB_texImg* s_logo = nullptr;
@@ -480,9 +480,9 @@ void button(float x, float y, float w, float h, const char* label, int size, flo
 void header(const char* title, const char* subtitle)
 {
     const Palette& p = pal();
-    text(headerBand() > 0 ? bandLeft() : 28, 10 + (headerBand() > 0 ? 0 : 8), title, 22,
+    text(headerBand() > 0 ? bandLeft() : 28, headerBand() > 0 ? (headerBand() - 22) * 0.5f : 18, title, 22,
          headerBand() > 0 ? 0xFFFFFFFF : p.text);
-    if (subtitle) textRight(612, headerBand() > 0 ? 16 : 24, subtitle, 15,
+    if (subtitle) textRight(612, headerBand() > 0 ? (headerBand() - 15) * 0.5f : 24, subtitle, 15,
                             headerBand() > 0 ? 0xFFFFFFC0 : p.textDim);
     if (headerBand() <= 0) roundRect(28, 52, 584, 2, 1, alpha(p.cardBorder, 0.8f));
 }
@@ -757,21 +757,29 @@ void backButton(float cx, float cy, float r, bool hover)
         circle(cx, cy, r, 0xF2F2F2FF);
         roundBorder(cx - r, cy - r, r * 2, r * 2, r, 2.0f, 0xB0B0B0FF);
     }
-    /* the arrow: three quarters of a ring, dots close enough to read as a
-     * stroke, its head at the open end pointing round the circle */
+    /* the arrow, as the old video channels drew it: a thick ring going
+     * clockwise from the top round the right and the bottom to the left
+     * side, where its head points up (the open quarter at the top left) */
     const u32 ink = hover ? 0xFFFFFFFF : 0x2B2B2BFF;
-    const float ar = r * 0.5f, th = r * 0.13f;
-    const float a0 = -0.6f, a1 = a0 + 4.6f;                   /* radians */
-    for (int i = 0; i <= 28; ++i) {
-        const float a = a0 + (a1 - a0) * i / 28.0f;
-        circle(cx + cosf(a) * ar, cy + sinf(a) * ar, th, ink);
+    const float ar = r * 0.48f, th = r * 0.15f;          /* the ring's middle, half its width */
+    const float a0 = -1.31f, a1 = 3.32f;                 /* -75 deg .. 190 deg, y down: clockwise */
+    const int   N  = 36;
+    for (int i = 0; i < N; ++i) {
+        const float u = a0 + (a1 - a0) * i / N, v = a0 + (a1 - a0) * (i + 1) / N;
+        const float ox0 = cx + cosf(u) * (ar + th), oy0 = cy + sinf(u) * (ar + th);
+        const float ix0 = cx + cosf(u) * (ar - th), iy0 = cy + sinf(u) * (ar - th);
+        const float ox1 = cx + cosf(v) * (ar + th), oy1 = cy + sinf(v) * (ar + th);
+        const float ix1 = cx + cosf(v) * (ar - th), iy1 = cy + sinf(v) * (ar - th);
+        triangle(ox0, oy0, ox1, oy1, ix1, iy1, ink);
+        triangle(ox0, oy0, ix1, iy1, ix0, iy0, ink);
     }
-    const float hx = cx + cosf(a0) * ar, hy = cy + sinf(a0) * ar;   /* the head, at a0 */
-    const float tx = -sinf(a0), ty = cosf(a0);                       /* along the ring */
-    const float nx = cosf(a0), ny = sinf(a0);                        /* outward        */
-    const float hs = r * 0.32f;
-    triangle(hx - tx * hs, hy - ty * hs, hx + nx * hs + tx * hs * 0.4f, hy + ny * hs + ty * hs * 0.4f,
-             hx - nx * hs + tx * hs * 0.4f, hy - ny * hs + ty * hs * 0.4f, ink);
+    circle(cx + cosf(a0) * ar, cy + sinf(a0) * ar, th, ink);   /* the tail's round end */
+    /* the head, at a1: its base across the ring, its tip ahead, clockwise */
+    const float hx = cx + cosf(a1) * ar, hy = cy + sinf(a1) * ar;
+    const float tx = -sinf(a1), ty = cosf(a1);                 /* along the ring, clockwise */
+    const float nx = cosf(a1),  ny = sinf(a1);                 /* outward                   */
+    const float hw = th * 2.1f, hl = th * 2.3f;                /* half its base, its length */
+    triangle(hx + nx * hw, hy + ny * hw, hx - nx * hw, hy - ny * hw, hx + tx * hl, hy + ty * hl, ink);
 }
 
 void progress(float x, float y, float w, float h, float frac)

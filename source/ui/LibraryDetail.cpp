@@ -17,8 +17,8 @@ namespace {
 
 const float MARGIN = 24;
 /* round back button, on the band's lower edge, top right */
-const float BACK_R = 20, BACK_CY = 44;
-float backCx() { return Ui::screenRight() - 34; }
+const float BACK_R = 30, BACK_CY = 58;   /* the channel's, measured: on the band's edge */
+float backCx() { return Ui::screenRight() - 59; }
 
 struct DetailLayout {
     float px, py, pw, ph;          /* poster (pw before the 16:9 widening) */
@@ -30,12 +30,12 @@ struct DetailLayout {
 DetailLayout detailLayout(bool wide)
 {
     DetailLayout L;
-    L.px = MARGIN; L.py = 84;
+    L.px = MARGIN; L.py = 96;
     L.pw = wide ? 128 : 84;  L.ph = wide ? 72 : 124;
     L.bx = L.px + L.pw * WiiUtils::wsScaleX() + 16;
     L.bw = 344 - L.bx;
-    L.playY = 88;  L.playH = 40;
-    L.favY  = 138; L.favH  = 32;
+    L.playY = 100; L.playH = 40;
+    L.favY  = 150; L.favH  = 32;
     L.rowsX = 362; L.rowsW = 640 - MARGIN - L.rowsX;
     return L;
 }
@@ -121,7 +121,7 @@ std::string safeTitle(const char* s, int maxCodepoints)
 }
 
 const float OV_SIZE = 14, OV_STEP = 18;   /* the overview's lines */
-const float CREDITS_Y = 354;              /* Cast, Director, genres */
+const float CREDITS_Y = 362;              /* Cast, Director, genres */
 
 }  // namespace
 
@@ -382,10 +382,10 @@ void LibraryView::drawDetailView(ir_t& ir) {
         /* Japanese in it: drawn with the Japanese font (Text's fallback) */
         const std::string title = filterDejaVu(detail.name, 200);
         const int w = (int)(backCx() - BACK_R - 12 - MARGIN) - (detail.isFavorite ? 28 : 0);
-        titleText(2, MARGIN, 52, w, title, 20, p.text, true);
+        titleText(2, MARGIN, 66, w, title, 20, p.text, true);
         if (detail.isFavorite) {   /* in the queue (a favourite): a heart after the title (1) */
             int tw = (int)Text::width(font, title.c_str(), 20);
-            Text::print(MARGIN + (tw < w ? tw : w) + 8, 52, font, "\xe2\x99\xa5", 20, p.accent);
+            Text::print(MARGIN + (tw < w ? tw : w) + 8, 66, font, "\xe2\x99\xa5", 20, p.accent);
         }
     }
 

@@ -24,7 +24,7 @@ static const float KNOB_R   = 15;
 static const float ROW_Y    = 396;                /* pills, pause...: centre line */
 static const float PILL_W   = 104, PILL_H = 30, PILL_DX = 130;
 static const float SIDE_DX  = 50;                 /* |<< and >>| beside pause     */
-static const float BACK_R   = 22, BACK_CY = 40;
+static const float BACK_R   = 30, BACK_CY = 46;   /* as the details page's */
 /* hoverButton: 0 |<<, 1 back 10 s (left arrow), 2 pause, 3 on 10 s (right
  * arrow), 4 >>|, then zoom and the back button */
 static const int   BTN_ZOOM = 5, BTN_EXIT = 6;
@@ -32,7 +32,7 @@ static float arrowX(int dir) { return dir < 0 ? Ui::screenLeft() + ARROW_X : Ui:
 static float trackL() { return arrowX(-1) + ARROW_W * 0.5f + 20; }
 static float trackR() { return arrowX(+1) - ARROW_W * 0.5f - 20; }
 static float zoomCx() { return Ui::screenRight() - 48; }
-static float backCx() { return Ui::screenRight() - 40; }
+static float backCx() { return Ui::screenRight() - 59; }
 static const int INTRO_X    = 466, INTRO_Y = 270, INTRO_W = 150, INTRO_H = 40;
 static const int LIST_X     = 150, LIST_W  = 340;
 static const int LIST_Y     = 112, ROW_H   = 34;
