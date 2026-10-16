@@ -1,108 +1,108 @@
-# WiiFlix
-
-A fork of [WiiFin](https://github.com/fabienmillet/WiiFin) (Jellyfin client for the Nintendo Wii) with a different home screen: **one long line of cover art, one row at a time.**
-
-| Control | Action |
-|---|---|
-| D-pad Left / Right | Previous / next cover (hold to keep going) |
-| D-pad Up / Down | Previous / next row: Continue Watching, then one row per movie/TV genre |
-| A | Open the selected title (pointer: click a side cover to select it, click the middle one to open it) |
-| Scrub bar knob | Hold A on it and drag to race through a long row; click the track to jump |
-| Scrub bar arrows | Click to step one cover; hold A to repeat |
-| 1 / + / 2 | Search / Browse libraries / Profiles |
-
-The home screen lives in `source/ui/CoverLine.cpp`. Everything else (sign-in, detail pages, playback through MPlayer CE, HTTPS) is WiiFin's code.
-
-Build exactly as WiiFin (devkitPPC, `./setup.sh`, then `make` and `make wad`). The output is `WiiFlix.dol` / `WiiFlix.wad`; on SD it goes to `apps/WiiFlix/boot.dol`. The WAD installs as its own channel (`WFLX`) beside WiiFin, though it still uses WiiFin's channel banner from `tools/wad/template.wad`.
-
-Licensed GPL-3.0, like WiiFin.
-
----
-
-## Original WiiFin README
-
 <p align="center">
-  <img src="https://raw.githubusercontent.com/fabienmillet/WiiFin/refs/heads/main/assets/logo_wiifin_banner.png" alt="WiiFin logo" width="600"/><br>
-  <em>Jellyfin client for the Nintendo Wii</em>
-</p>
-
-<p align="center">
-  <a href="README.md"><img src="https://flagcdn.com/w40/gb.png" width="28" alt="English"/></a>
-  &nbsp;
-  <a href="README/README.fr.md"><img src="https://flagcdn.com/w40/fr.png" width="28" alt="Français"/></a>
-  &nbsp;
-  <a href="README/README.de.md"><img src="https://flagcdn.com/w40/de.png" width="28" alt="Deutsch"/></a>
-  &nbsp;
-  <a href="README/README.es.md"><img src="https://flagcdn.com/w40/es.png" width="28" alt="Español"/></a>
-  &nbsp;
-  <a href="README/README.it.md"><img src="https://flagcdn.com/w40/it.png" width="28" alt="Italiano"/></a>
+  <img src="assets/logo_wiifin.png" alt="WiiFLIX" width="420"/><br>
+  <em>Your Jellyfin movies and TV shows on the Nintendo Wii,<br>
+  browsed the way the old Wii video channels did.</em>
 </p>
 
 ---
 
-<p align="center">
-<strong>WiiFin</strong> is an experimental homebrew client for <a href="https://jellyfin.org">Jellyfin</a>, built specifically for the Nintendo Wii.<br>
-It browses and plays your films, series and music on the console itself, written in C++ with <a href="https://github.com/GRRLIB/GRRLIB">GRRLIB</a> and <a href="https://github.com/extremscorner/mplayer-ce">MPlayer CE</a>.
-</p>
+**WiiFLIX** is a homebrew [Jellyfin](https://jellyfin.org) client for the Nintendo Wii, for **movies and TV shows**. It is a fork of [WiiFin](https://github.com/fabienmillet/WiiFin), restyled after the video channels the Wii had in its day: a red header, one line of cover art at a time, a simple details page, and a player you drive with the pointer.
 
-<table align="center">
-  <tr>
-    <td><img src="assets/screenshots/main-menu.png" alt="Main menu" width="420"/></td>
-    <td><img src="assets/screenshots/film.png" alt="A film" width="420"/></td>
-  </tr>
-  <tr>
-    <td><img src="assets/screenshots/player.png" alt="The player" width="420"/></td>
-    <td><img src="assets/screenshots/now-playing.png" alt="The music player" width="420"/></td>
-  </tr>
-</table>
-<p align="center"><sub><em>Big Buck Bunny</em> © Blender Foundation, <a href="https://peach.blender.org">peach.blender.org</a> (CC BY 3.0) · <em>Pill</em> by Heuse & Zeus X Crona feat. Emma Sameth, <a href="https://ncs.io">NCS</a></sub></p>
+Written in C++ with [GRRLIB](https://github.com/GRRLIB/GRRLIB) and [MPlayer CE](https://github.com/extremscorner/mplayer-ce). Runs from the Homebrew Channel or as its own channel on the Wii Menu.
 
----
+## ✨ Features
+
+- **A line of covers, one row at a time**: Continue Watching, your **Instant Queue** (the titles you favourited in Jellyfin), then a row for every genre of your movies and TV shows. Point at a cover to enlarge it, click to open it; click the row's name to jump to any row from a list.
+- **Details page**: Play, Add to Queue, star rating, age rating, year and running time, the overview, cast, director and genres; audio and subtitle tracks (and versions) picked from a list.
+- **Player**: a scrub bar with the server's thumbnails, ±10 s steps, resume where you stopped, skip intro / recap / credits, next and previous episode, audio and subtitle tracks, picture zoom.
+- **Direct play** of what the Wii can decode (SD DivX/Xvid, H.264 up to 480p, MPEG-1/2, VP8); the server converts the rest. See [DIRECT_PLAY.md](DIRECT_PLAY.md).
+- **Sign in** with your username and password, with **Quick Connect**, or by finding the server on your network. Several **profiles** (accounts and servers), each with an optional passcode.
+- **Search** across your movies, series and episodes.
+- **Remote control** from Jellyfin's apps and dashboard ("Play on…").
+- The **Wii's languages** (English and nine translations), the **Wii Remote** (pointer or D-pad), **Classic Controller**, **GameCube controller**, and the Wii U GamePad in a Virtual Console inject.
 
 ## 📦 Install
 
-Download the files from the [latest release](https://github.com/fabienmillet/WiiFin/releases):
+You need a Wii (or a Wii U's vWii) with the [Homebrew Channel](https://wiibrew.org/wiki/Homebrew_Channel), an SD card, and a Jellyfin server the Wii can reach on your network.
 
-- **Homebrew Channel**: unzip `WiiFin-hbc.zip` at the root of your SD card
-- **Wii Menu channel**: install `WiiFin.wad` with a WAD manager (Wii and vWii); for Chinese or Korean, also copy `apps/WiiFin/fonts/` from the zip to the SD card
-- **Dolphin**: open `WiiFin.dol`
+Get the files from the [releases](https://github.com/ArthurDickerson/WiiFlix/releases):
 
-Then sign in to your Jellyfin server with your username and password, or with Quick Connect.
+- **Homebrew Channel**: unzip `WiiFlix-hbc.zip` at the root of your SD card. It holds `apps/WiiFlix/` (the app, its icon, and fonts for Chinese and Korean). Start **WiiFLIX** from the Homebrew Channel.
+- **Wii Menu channel** (optional): install `WiiFlix.wad` with a WAD manager. It is fakesigned, so the Wii must accept that (a patched IOS, as WAD managers set up). It installs as its own channel, *WiiFLIX* (title `WFLX`), beside WiiFin if you have it. Installing WADs always carries some risk: the Homebrew Channel is the safe way. For Chinese or Korean, also copy `apps/WiiFlix/fonts/` from the zip to the SD card.
+- **Dolphin**: open `WiiFlix.dol`.
 
-## ✨ Highlights
+Then sign in to your Jellyfin server. WiiFLIX keeps its settings, profiles and log (`wiifin.log`) in `SD:/apps/WiiFlix/`.
 
-- **Films, series and music** from your Jellyfin: direct play of what the Wii decodes, the server converts the rest
-- A home screen of **rows** or a **grid**, tabs, sort & filter, search, A-Z
-- A **player** with the server's thumbnails, scenes and chapters, skip intro / credits, next episode, audio and subtitle tracks, resume
-- **Music**: a Now Playing screen with visualizers and synced lyrics; it keeps playing while you browse
-- **Photos** with a slideshow, and playlists of videos
-- **Profiles**: several accounts and servers, a passcode if you want, each its own theme
-- **Remote control** from Jellyfin's dashboard and apps: Play on... Nintendo Wii
-- The **Wii's ten languages**; Wii Remote, Classic Controller, GameCube controller or Wii U GamePad, no sensor bar needed
+## 🎮 Controls
 
-Everything it does, the controls, the settings and custom sounds: the **[user guide](docs/USER_GUIDE.md)**.
+With the Wii Remote: point and press **A** on anything on the screen, or use the buttons below. Buttons on screen grow and turn orange when chosen.
 
-## ⚠️ Project status
+**Home (the cover line)**
 
-> 🚧 **Experimental**: functional but still under active development. Expect rough edges on real hardware.
+| Button | Action |
+|---|---|
+| D-pad Left / Right | Previous / next cover (hold to keep going) |
+| D-pad Up / Down | Previous / next row (the ▼▲ buttons, top right) |
+| **−** / **+** | A screenful of covers back / on |
+| **A** | Open the cover in focus |
+| **1** | Search |
+| **2** | WiiFLIX menu: back to WiiFLIX, switch profile, the main menu (Sign Out is there) |
+| Pointer | Hover to enlarge a cover; drag the scrub bar's knob to race through a long row; click the row's name for the list of rows |
 
-- Direct play for SD videos only (see [DIRECT_PLAY.md](DIRECT_PLAY.md)); stereo sound
-- Picture subtitles (PGS, VobSub) are burned in by the server
-- More in the [known limitations](docs/USER_GUIDE.md#%EF%B8%8F-known-limitations)
+**Details page**
 
-## 🤝 Contributing
+| Button | Action |
+|---|---|
+| D-pad | Move between Play, Add to Queue, the track buttons and the back button |
+| **A** | Press the button in focus |
+| **B** | Back |
+| **1** | Add to / remove from your queue |
+| **+** | Mark watched / not watched |
+| **2** | Extras (trailers, featurettes…), when there are some |
+| **−** | Read the whole overview |
 
-Pull requests, bug reports and ideas are welcome:
+**Player**
 
-* 📘 The [contribution guidelines](CONTRIBUTING.md), and how to [build WiiFin](docs/BUILDING.md)
-* 🌍 [Translating](lang/README.md) WiiFin into your language
-* 🐛 A [bug report](.github/ISSUE_TEMPLATE/bug_report.yml) (with `apps/WiiFin/wiifin.log` from the SD card) or a 💡 [feature request](.github/ISSUE_TEMPLATE/feature_request.yml)
+| Button | Action |
+|---|---|
+| **A** | Pause / play (or the button under the pointer) |
+| D-pad Left / Right | Back / on 10 seconds (hold to go faster) |
+| D-pad Up / Down | Volume |
+| **−** / **+** | Previous / next episode |
+| **1** / **2** | Audio track / subtitles |
+| **B** | Back to the details page (with the controls hidden, the first press shows them) |
+| Pointer | Click the bar to jump there; the arrows step 10 s |
 
-<a href="https://discord.gg/p9DXfEmUYu">
-  <img src="https://img.shields.io/badge/Join%20us%20on%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord Badge"/>
-</a>
+**HOME** opens the Wii's HOME Menu anywhere.
+
+## ⚠️ Status
+
+WiiFLIX is **experimental**: it works, but expect rough edges on real hardware.
+
+- Direct play covers SD videos only; HD files are converted by the server. Stereo sound.
+- Picture subtitles (PGS, VobSub) are burned in by the server.
+- Music, photos and books are not supported (WiiFLIX is for movies and TV shows).
+
+## 🛠️ Building
+
+You need [devkitPro](https://devkitpro.org) (devkitPPC, libogc, the `wii-dev` portlibs). On Linux with `pacman` or `dkp-pacman`, `./setup.sh` installs everything, builds GRRLIB and mbedTLS, and installs libWiiPy (for the WAD) in `tools/.venv`. On Windows, build in WSL.
+
+```bash
+./build.sh                  # WiiFlix.dol
+./build.sh wad              # WiiFlix.wad, the Wii Menu channel
+tools/make_release.sh       # WiiFlix-hbc.zip, the Homebrew Channel package
+```
+
+The version is in `source/version.h`. The channel's icon, banner and name come from `tools/wad/banner.bnr`, built from `assets/channel_icon.png` and `assets/channel_banner.png` by `tools/wad/make_banner.py`.
+
+Playback needs MPlayer CE as `libmplayer.a`: a prebuilt one is in `libs/mplayer-ce-build` (see [MPLAYER_CE_BUILD.md](MPLAYER_CE_BUILD.md) to rebuild it).
+
+## 🙏 Credits
+
+WiiFLIX is built on [WiiFin](https://github.com/fabienmillet/WiiFin) by fabienmillet and its contributors, which does all the hard work: the Jellyfin client, playback through MPlayer CE, HTTPS, sign-in and profiles. Thanks to the [devkitPro](https://devkitpro.org), [GRRLIB](https://github.com/GRRLIB/GRRLIB), [MPlayer CE](https://github.com/extremscorner/mplayer-ce) and [Jellyfin](https://jellyfin.org) projects.
+
+WiiFLIX is a fan project. It is not affiliated with or endorsed by Netflix, Nintendo or Jellyfin.
 
 ## 📜 License
 
-This project is licensed under the **GPLv3**.
-See the [LICENSE](LICENSE) file for more details.
+GPL-3.0, like WiiFin: see [LICENSE](LICENSE).
