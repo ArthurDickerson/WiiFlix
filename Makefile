@@ -220,7 +220,7 @@ WADPY := $(if $(wildcard $(CURDIR)/tools/.venv/bin/python),$(CURDIR)/tools/.venv
 
 wad: $(TARGET).wad
 
-$(TARGET).wad: $(TARGET).dol tools/make_wad.py tools/wad/template.wad tools/stub_zone.bin
+$(TARGET).wad: $(TARGET).dol tools/make_wad.py tools/wad/template.wad tools/wad/banner.bnr tools/stub_zone.bin
 	$(WADPY) tools/make_wad.py $(TARGET).dol $@
 
 clean:

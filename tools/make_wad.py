@@ -4,11 +4,12 @@
     python3 tools/make_wad.py [WiiFin.dol] [WiiFin.wad]
 
 tools/wad/template.wad is the channel without the app: ticket, TMD and
-certificates of title 00010001-WIFN, the banner (content 0) and the
+certificates of title 00010001-WIFN, WiiFin's banner (content 0) and the
 CustomizeMii NAND loader (content 1, the boot content).  The loader reads
-content 2 and jumps to it; this script puts WiiFin.dol there, updates the
-TMD (size, hash) and fakesigns the ticket and TMD, so the WAD installs with
-any WAD manager running on a patched IOS.
+content 2 and jumps to it; this script puts WiiFlix.dol there and
+tools/wad/banner.bnr (WiiFlix's icon and banner) in content 0, updates the
+TMD (sizes, hashes) and fakesigns the ticket and TMD, so the WAD installs
+with any WAD manager running on a patched IOS.
 
 The loader runs from 0x80804000-0x80831E40, a range WiiFin's own data covers:
 WiiFin embeds the loader's bytes there (tools/stub_zone.bin, with one branch
@@ -28,10 +29,12 @@ except ImportError:
 
 TOOLS = Path(__file__).resolve().parent
 TEMPLATE = TOOLS / "wad" / "template.wad"
+BANNER = TOOLS / "wad" / "banner.bnr"   # WiiFlix's (tools/wad/make_banner.py)
 STUB_ZONE = TOOLS / "stub_zone.bin"
 ZONE_START, ZONE_END = 0x80804000, 0x80831E40
 PATCHED_WORD = 0x8081B768          # bctrl -> b 0x80003F00 in stub_zone.bin
 APP_INDEX = 2                      # content the loader reads
+BANNER_INDEX = 0                   # opening.bnr: the Wii Menu's icon and banner
 
 
 def loader_image(dol: bytes) -> bytearray:
@@ -63,9 +66,11 @@ def main() -> None:
         sys.exit("the template's NAND loader no longer matches tools/stub_zone.bin")
 
     # WiiFlix gets its own channel ID (00010001-WFLX) so it installs next
-    # to WiiFin instead of replacing it.  The banner and icon still come
-    # from the WiiFin template WAD (tools/wad/template.wad).
+    # to WiiFin instead of replacing it, and its own banner: the WiiFLIX
+    # icon, banner picture and name (tools/wad/banner.bnr, from
+    # make_banner.py; the template's layouts and sound)
     title.set_title_id("00010001" + b"WFLX".hex().upper())
+    title.set_content(BANNER.read_bytes(), BANNER_INDEX)
     title.set_content(dol, APP_INDEX)
     title.fakesign()
     wad_path.write_bytes(title.dump_wad())
