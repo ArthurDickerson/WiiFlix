@@ -7,10 +7,8 @@
 #include "Utils.h"
 #include "Input.h"
 #include "MusicBGM.h"
-#include "MusicSession.h"
 #include "SoundFX.h"
 #include "../ui/ConnectView.h"
-#include "../ui/MusicPlayerView.h"
 #include "../ui/ProfileView.h"
 #include "../ui/ScreenArea.h"
 #include "../ui/LibraryView.h"
@@ -39,7 +37,7 @@
 #include <ogc/ios.h>
 #include <ogc/lwp_watchdog.h>
 
-/* Ring spinner PNG embedded asset (music player transition frames) */
+/* Ring spinner PNG embedded asset (unused since the five-block loader) */
 extern unsigned char data_ring_png[];
 extern unsigned int  data_ring_png_len;
 
@@ -518,20 +516,7 @@ void App::loop() {
                 else               VIDEO_WaitVSync();   /* the previous picture stays */
             }
             if (!running) return;
-            if (lv.pendingPlayIsMusic) {
-                lv.pendingPlayIsMusic = false;
-                SoundFX::play(SoundFX::FX::Play);
-                MusicPlayerView mpv(font, jellyfinClient, auth, p.serverUrl);
-                mpv.setCursorTex(cursorPointerTex);
-                mpv.setTracks(lv.pendingMusicTracks, lv.pendingMusicTrackIdx);
-                mpv.setShuffleStart(lv.pendingMusicShuffle);
-                lv.pendingMusicShuffle = false;
-                bool wantsExit = mpv.run();
-                if (g_app_powerOff || g_app_reset) { running = false; return; }
-                SoundFX::play(SoundFX::FX::Back);
-                if (wantsExit) { running = false; return; }
-                lv.onPlaybackFinished("");
-            } else if (!lv.pendingPlayUrl.empty()) {
+            if (!lv.pendingPlayUrl.empty()) {
                 std::string lastItemId;
                 bool wantsExit = runPlaySession(jellyfinClient, auth, p.serverUrl, lv,
                                                 font, btnTex, cursorPointerTex, ringTex,
@@ -543,17 +528,8 @@ void App::loop() {
                 lv.exitTo = LibraryView::Exit::Profiles;
                 tokenRefused = true;
                 break;
-            } else if (lv.exitTo == LibraryView::Exit::NowPlaying) {
-                /* the music playing while browsing: its page again */
-                lv.exitTo = LibraryView::Exit::Profiles;
-                bool wantsExit = MusicSession::open();
-                if (g_app_powerOff || g_app_reset) { running = false; return; }
-                SoundFX::play(SoundFX::FX::Back);
-                if (wantsExit) { running = false; return; }
-                lv.onPlaybackFinished("");
             } else {
-                /* the profile closes: its music with it */
-                MusicSession::stop(true);
+                /* the profile closes */
                 if (lv.exitTo == LibraryView::Exit::WiiFinMenu) {
                     toMainMenu = true;
                     SYS_Report("[WiiFin] back to the menu\n");
@@ -762,7 +738,6 @@ void App::loop() {
     // --- Cleanup ---
     saveSettings();
     Log::close();        // its writer thread must not touch the card past here
-    MusicSession::stop(false);
     MusicBGM::pause();   // stop audio thread/ASND callbacks before tearing down GX
     // Blank the VI output before GX teardown to avoid purple/pink artefact frame
     VIDEO_SetBlack(true);

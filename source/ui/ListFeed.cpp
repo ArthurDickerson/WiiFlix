@@ -22,7 +22,7 @@ ListFeed::~ListFeed()
 std::string ListFeed::query(int start, int limit, const char* nameLessThan) const
 {
     char q[640];
-    /* a filter starting with '/' is a route of its own (/Artists/...) */
+    /* a filter starting with '/' is a route of its own */
     std::string base = filter[0] == '/' ? filter : "/Users/" + auth.userId + "/Items?" + filter;
     snprintf(q, sizeof(q),
              "%s%s&Limit=%d&StartIndex=%d%s%s",

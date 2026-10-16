@@ -31,7 +31,7 @@ float progressOf(const T& it) {
 void drawThumb(GRRLIB_texImg* tex, float x, float y, float w, float h,
                float focus, float prog = -1.0f, const char* caption = nullptr,
                bool grow = true);
-// The height a picture w wide keeps its own shape at (album and collection
+// The height a picture w wide keeps its own shape at (collection
 // art is often square), at most maxH: maxH too without a picture yet.
 float fitHeight(const GRRLIB_texImg* tex, float w, float maxH);
 // Row card for the vertical lists.
@@ -53,7 +53,6 @@ void drawLibHeader(const std::string& libName, const char* const* tabNames,
 
 extern const char* const kMovieTabs[4];
 extern const char* const kTvTabs[3];
-extern const char* const kMusicTabs[5];
 extern const char* const kHomeTabs[3];
 
 }  // namespace LibDraw

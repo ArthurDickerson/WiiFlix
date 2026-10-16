@@ -95,23 +95,15 @@ void LibraryView::drawCursor(ir_t& ir) {
 u32 LibraryView::colorForType(const std::string& type, bool sel) {
     if (type == "movies")    return sel ? 0x2266CCFF : 0x1A4A8AFF;
     if (type == "tvshows")   return sel ? 0xCC4433FF : 0x7A2A1AFF;
-    if (type == "music")     return sel ? 0x33AA55FF : 0x1A5A2AFF;
-    if (type == "books")     return sel ? 0xAA7733FF : 0x5A3A0AFF;
-    if (type == "playlists") return sel ? 0x6655BBFF : 0x443377FF;
     return sel ? 0x446688FF : 0x2A3A4AFF;
 }
 
 const char* LibraryView::labelForType(const std::string& type) {
     if (type == "movies")      return tr("MOVIES");
     if (type == "tvshows")     return tr("SERIES");
-    if (type == "music")       return tr("MUSIC");
-    if (type == "books")       return tr("BOOKS");
-    if (type == "playlists")   return tr("PLAYLISTS");
     if (type == "boxsets")     return tr("COLLECTIONS");
     if (type == "livetv")      return tr("LIVE TV");
     if (type == "homevideos")  return tr("HOME VIDEOS");
-    if (type == "photos")      return tr("PHOTOS");
-    if (type == "musicvideos") return tr("MUSIC VIDEOS");
     if (type == "trailers")    return tr("TRAILERS");
     if (type == "mixed")       return tr("MIXED");
     // Fallback: show the raw type in upper case (max 12 chars) so it's still informative
@@ -364,113 +356,6 @@ bool LibraryView::startShuffle(const std::string& seasonId)
     return true;
 }
 
-bool LibraryView::startMusicShuffle(const std::string& id, bool playlist)
-{
-    std::vector<JellyfinAudioItem> tracks;
-    bool ok = false;
-    runWithLoading([&]() {
-        if (id.empty()) {
-            std::vector<JellyfinItem> items;
-            char q[256];
-            snprintf(q, sizeof(q), "/Users/%s/Items?ParentId=%s&IncludeItemTypes=Audio&Recursive=true"
-                     "&SortBy=Random&Limit=200", auth.userId.c_str(), currentLibId.c_str());
-            ok = client.getItemsByQuery(serverUrl, auth, q, items);
-            for (const JellyfinItem& it : items) {
-                JellyfinAudioItem a;
-                a.id = it.id; a.name = it.name; a.runtimeTicks = it.runtimeTicks;
-                tracks.push_back(a);
-            }
-        } else {
-            ok = playlist ? client.getPlaylistTracks(serverUrl, auth, id, tracks)
-                          : client.getAlbumTracks(serverUrl, auth, id, tracks);
-        }
-    });
-    if (!ok || tracks.empty()) return false;
-    if (std::none_of(tracks.begin(), tracks.end(), [](const JellyfinAudioItem& a) { return !a.video; }))
-        return playPlaylistVideos(tracks, 0, true);
-    pendingMusicTracks.clear();
-    for (const JellyfinAudioItem& a : tracks) {
-        if (a.video) continue;
-        MusicTrack t;
-        t.id = a.id; t.title = a.name; t.artist = a.artist; t.album = a.album;
-        t.runtimeTicks = a.runtimeTicks;
-        pendingMusicTracks.push_back(t);
-    }
-    SYS_Report("[Shuffle] %d track(s)%s\n", (int)pendingMusicTracks.size(), id.empty() ? " drawn" : "");
-    pendingMusicTrackIdx = 0;
-    pendingMusicShuffle  = true;
-    pendingPlayIsMusic   = true;
-    return true;
-}
-
-bool LibraryView::startVideoShuffle()
-{
-    std::vector<JellyfinItem> items;
-    bool ok = false;
-    std::string err;
-    freeDetail();
-    runWithLoading([&]() {
-        char q[256];
-        snprintf(q, sizeof(q), "/Users/%s/Items?ParentId=%s&IncludeItemTypes=MusicVideo,Video&Recursive=true"
-                 "&SortBy=Random&Limit=100", auth.userId.c_str(), currentLibId.c_str());
-        ok = client.getItemsByQuery(serverUrl, auth, q, items);
-        if (ok && !items.empty()) ok = client.getItemDetail(serverUrl, auth, items[0].id, detail);
-        if (!ok) err = client.lastError();
-    });
-    if (!ok) { errMsg = err; state = State::Error; return false; }
-    if (items.empty()) return false;
-    /* the queue of a shuffled series: next / previous and the next one at
-     * the end go through it */
-    std::vector<JellyfinEpisode> drawn;
-    for (const JellyfinItem& it : items) {
-        JellyfinEpisode e;
-        e.id = it.id; e.name = it.name;
-        drawn.push_back(e);
-    }
-    SYS_Report("[Shuffle] %d video(s) drawn\n", (int)drawn.size());
-    detailItemId    = drawn[0].id;
-    detailIsEpisode = false;
-    preparePlay(0LL, &drawn);
-    return true;
-}
-
-bool LibraryView::playPlaylistVideos(const std::vector<JellyfinAudioItem>& list, int from, bool shuffle)
-{
-    std::vector<JellyfinEpisode> queue;
-    int at = 0;
-    for (int i = 0; i < (int)list.size(); ++i) {
-        if (!list[i].video) continue;
-        if (i == from) at = (int)queue.size();
-        JellyfinEpisode e;
-        e.id = list[i].id; e.name = list[i].name;
-        queue.push_back(e);
-    }
-    if (queue.empty()) return false;
-    if (shuffle) {
-        u32 r = (u32)gettime();
-        for (int i = (int)queue.size() - 1; i > 0; --i) {
-            r = r * 1664525u + 1013904223u;
-            std::swap(queue[i], queue[(r >> 8) % (u32)(i + 1)]);
-        }
-        at = 0;
-    }
-    bool ok = false;
-    std::string err;
-    freeDetail();
-    runWithLoading([&]() {
-        ok = client.getItemDetail(serverUrl, auth, queue[at].id, detail);
-        if (!ok) err = client.lastError();
-    });
-    if (!ok) { errMsg = err; state = State::Error; return false; }
-    SYS_Report("[Playlist] %d video(s)%s, from video %d\n", (int)queue.size(),
-               shuffle ? " shuffled" : "", at + 1);
-    detailItemId    = queue[at].id;
-    detailIsEpisode = !detail.seasonId.empty();
-    preparePlay(0LL, &queue);
-    pendingPlayEpisodeIdx = at;
-    return true;
-}
-
 // ---------------------------------------------------------------
 void LibraryView::loadDetail() {
     if (detailItemId.empty()) { state = State::PostersReady; return; }
@@ -640,9 +525,6 @@ void LibraryView::clearPendingPlay() {
     pendingPlaySessionId.clear();
     pendingPlayStartTimeTicks = 0;
     pendingPlayRuntimeTicks   = 0;
-    pendingPlayIsMusic        = false;
-    pendingMusicTracks.clear();
-    pendingMusicTrackIdx      = 0;
     pendingPlayEpisodes.clear();
     pendingPlayEpisodeIdx     = 0;
     pendingPlaySeriesId.clear();
@@ -828,27 +710,13 @@ void LibraryView::loadMovieSuggestions() {
 void LibraryView::loadItems() {
     if (!posterMode) {
         // Text list: the whole library, fetched as it scrolls (ListFeed)
-        std::string filter = (currentLibType == "music" ? musicFilter() : listFilter()) +
-                             (sortable() ? sortQuery() : "");
+        std::string filter = listFilter() + (sortable() ? sortQuery() : "");
         bool ok = false; std::string err;
         runWithLoading([&]() { ok = feed.open(filter, err); });
         if (!ok) { errMsg = err; state = State::Error; return; }
         itemTotal = feed.total();
-        /* a library of loose files (no album tags) has no album: opened on
-         * its tracks instead of an empty Albums tab */
-        if (currentLibType == "music" && !inItemsDrilldown && musicTab == 0 && musicOpening &&
-            itemTotal == 0) {
-            musicOpening = false;
-            musicTab = 4;
-            SYS_Report("[Library] no album: the Songs tab\n");
-            state = State::ItemsLoad;
-            return;
-        }
-        musicOpening = false;
         if (sortable() && !sortQuery().empty())
             SYS_Report("[Library] %d titles, sorted / filtered\n", itemTotal);
-        if (currentLibType == "music" && !inItemsDrilldown)
-            SYS_Report("[Library] music tab %s: %d\n", kMusicTabs[musicTab], itemTotal);
         globFavMode = false;
         itemSel = 0; viewTop = 0;
         if (listRestoreSel >= 0) { itemSel = listRestoreSel; listRestoreSel = -1; clampScroll(); }
@@ -860,35 +728,11 @@ void LibraryView::loadItems() {
     int startIndex = itemPage * limit;
     bool ok = false; std::string err;
     runWithLoading([&]() {
-        if (currentLibType == "music") {
-            /* the tab's own query, a page of it (Posters view) */
-            const std::string f = musicFilter() + (sortable() ? sortQuery() : "");
-            char page[96];
-            snprintf(page, sizeof(page), "%s&StartIndex=%d&Limit=%d",
-                     f.find("&SortBy=") == std::string::npos ? "&SortBy=SortName&SortOrder=Ascending" : "",
-                     startIndex, limit);
-            ok = client.getItemsByQuery(serverUrl, auth,
-                                        (f[0] == '/' ? f : "/Users/" + auth.userId + "/Items?" + f) + page,
-                                        items, &itemTotal);
-        } else {
-            ok = client.getItems(serverUrl, auth, currentLibId, startIndex, limit, items, itemTotal,
-                                 sortable() ? sortQuery() : "");
-        }
+        ok = client.getItems(serverUrl, auth, currentLibId, startIndex, limit, items, itemTotal,
+                             sortable() ? sortQuery() : "");
         if (!ok) err = client.lastError();
     });
     if (!ok) { errMsg = err; state = State::Error; return; }
-    if (currentLibType == "music" && !inItemsDrilldown) {
-        /* no album (loose files): opened on the Songs tab, as the list does */
-        if (musicTab == 0 && musicOpening && itemTotal == 0) {
-            musicOpening = false;
-            musicTab = 4;
-            SYS_Report("[Library] no album: the Songs tab\n");
-            state = State::ItemsLoad;
-            return;
-        }
-        SYS_Report("[Library] music tab %s: %d\n", kMusicTabs[musicTab], itemTotal);
-    }
-    musicOpening = false;
     globFavMode = false; itemSel = 0; viewTop = 0; posterSel = 0;
     state = posterMode ? State::PostersLoad : State::ItemsReady;
 }
@@ -906,18 +750,6 @@ std::string LibraryView::listFilter() const {
                    "&SortBy=SortName&SortOrder=Ascending";
     }
     return "ParentId=" + currentLibId;
-}
-
-/* the tabs, as Jellyfin's: albums, album artists (their own route: /Items
- * ignores the library for artists), playlists (none belongs to a
- * library), every track; an artist's albums */
-std::string LibraryView::musicFilter() const {
-    if (inItemsDrilldown)
-        return "AlbumArtistIds=" + currentLibId + "&IncludeItemTypes=MusicAlbum&Recursive=true";
-    if (musicTab == 2) return "/Artists/AlbumArtists?ParentId=" + currentLibId + "&UserId=" + auth.userId;
-    if (musicTab == 3) return "IncludeItemTypes=Playlist&MediaTypes=Audio&Recursive=true";
-    if (musicTab == 4) return "ParentId=" + currentLibId + "&IncludeItemTypes=Audio&Recursive=true";
-    return "ParentId=" + currentLibId + "&IncludeItemTypes=MusicAlbum&Recursive=true";
 }
 
 const char* const LibraryView::SPECIALS_ROW = "special-features";
@@ -1052,43 +884,6 @@ void LibraryView::loadTVUpcoming() {
     state = State::TVUpcomingReady;
 }
 
-void LibraryView::freeMusicSuggestions() {
-    for (int i = 0; i < 8; i++) {
-        if (musicRecentTex[i]) { GRRLIB_FreeTexture(musicRecentTex[i]); musicRecentTex[i] = nullptr; }
-    }
-    musicRecentItems.clear();
-}
-
-void LibraryView::loadMusicSuggestions() {
-    freeMusicSuggestions();
-    runWithLoading([&]() {
-        client.getMusicLatest(serverUrl, auth, musicLibId, 8, musicRecentItems);
-        for (int i = 0; i < (int)musicRecentItems.size(); i++) {
-            std::string imgBytes;
-            client.getItemImageBytes(serverUrl, auth, musicRecentItems[i].id,
-                                     POSTER_W, POSTER_H, imgBytes);
-            if (!imgBytes.empty())
-                musicRecentTex[i] = loadJPEGTexture((const u8*)imgBytes.data(),
-                                                     (u32)imgBytes.size());
-        }
-    });
-    musicSuggestSel = 0;
-    musicSuggestOff = 0;
-    state = State::MusicSuggestionsReady;
-}
-
-void LibraryView::loadPlaylistsTab() {
-    items.clear();
-    bool ok = false; std::string err;
-    int total = 0;
-    runWithLoading([&]() {
-        ok = client.getPlaylists(serverUrl, auth, 0, 50, items, total);
-        if (!ok) err = client.lastError();
-    });
-    if (!ok) { errMsg = err; state = State::Error; }
-    else     { itemSel = 0; viewTop = 0; itemTotal = total; state = State::ItemsReady; }
-}
-
 void LibraryView::loadEpisodes() {
     episodes.clear();
     bool ok = false; std::string err;
@@ -1102,36 +897,6 @@ void LibraryView::loadEpisodes() {
                    episodes.empty() ? 0 : episodes[0].seasonNumber);
         episodeSel = 0; episodeTop = 0; state = State::EpisodesReady;
     }
-}
-
-void LibraryView::loadMusicTracks() {
-    musicTracks.clear();
-    bool ok = false; std::string err;
-    runWithLoading([&]() {
-        if (musicIsPlaylist)
-            ok = client.getPlaylistTracks(serverUrl, auth, musicAlbumId, musicTracks);
-        else
-            ok = client.getAlbumTracks(serverUrl, auth, musicAlbumId, musicTracks);
-        if (!ok) err = client.lastError();
-        // Pick album artist from first track if not already known
-        if (ok && musicAlbumArtist.empty() && !musicTracks.empty())
-            musicAlbumArtist = musicTracks[0].artist;
-    });
-    if (!ok) { errMsg = err; state = State::Error; return; }
-    const int videos = (int)std::count_if(musicTracks.begin(), musicTracks.end(),
-                                          [](const JellyfinAudioItem& a) { return a.video; });
-    SYS_Report("[Music] %s: %d song(s), %d video(s)\n", musicIsPlaylist ? "playlist" : "album",
-               (int)musicTracks.size() - videos, videos);
-    musicTrackSel = 0; musicTrackTop = 0; state = State::MusicTracksReady;
-}
-
-void LibraryView::clampMusicTrackScroll() {
-    int n = (int)musicTracks.size();
-    if (musicTrackSel < 0) musicTrackSel = 0;
-    if (musicTrackSel >= n) musicTrackSel = n > 0 ? n - 1 : 0;
-    if (musicTrackSel < musicTrackTop) musicTrackTop = musicTrackSel;
-    if (musicTrackSel >= musicTrackTop + MUSIC_TRACKS_VISIBLE)
-        musicTrackTop = musicTrackSel - MUSIC_TRACKS_VISIBLE + 1;
 }
 
 // ---------------------------------------------------------------
@@ -1150,10 +915,9 @@ bool LibraryView::loadingState(State s) {
     case State::LibsLoad: case State::ItemsLoad:
     case State::PostersLoad: case State::SeasonsLoad:
     case State::EpisodesLoad: case State::DetailLoad:
-    case State::MusicTracksLoad: case State::CollectionsLoad:
+    case State::CollectionsLoad:
     case State::FavoritesLoad: case State::MovieSuggestionsLoad:
     case State::TVSuggestionsLoad: case State::TVUpcomingLoad:
-    case State::MusicSuggestionsLoad: case State::PlaylistsLoad:
     case State::GlobalFavoritesLoad: case State::SearchLoad: case State::SpecialsLoad:
         return true;
     default:
@@ -1169,16 +933,16 @@ static unsigned mixKey(std::initializer_list<int> v) {
 
 unsigned LibraryView::focusKey() const {
     return mixKey({ libSel, itemSel, posterSel, detailAudioSel, detailSubSel, detailFocus, trackMenu, trackMenuSel,
-                    resumeSel, seasonSel, episodeSel, musicTrackSel, continueSel, nextUpSel,
+                    resumeSel, seasonSel, episodeSel, continueSel, nextUpSel,
                     actRow, movieSuggestRow, movieSuggestContSel, movieSuggestRecSel,
                     tvSuggestRow, tvSuggestContSel, tvSuggestRecSel, tvUpcomingSel,
-                    musicSuggestSel, searchSel, specialsSel, specialsGroup,
+                    searchSel, specialsSel, specialsGroup,
                     sortPanel ? 1 + sortRow : 0, sortEdit.sort, sortEdit.genre, sortEdit.show,
                     (int)browse.focusKey() });
 }
 
 unsigned LibraryView::pageKey() const {
-    return mixKey({ homePage, movieTab, tvTab, musicTab, itemPage });
+    return mixKey({ homePage, movieTab, tvTab, itemPage });
 }
 
 void LibraryView::toggleFavorite(const std::string& id, bool& favorite) {
@@ -1199,31 +963,16 @@ void LibraryView::togglePlayed(const std::string& id, bool& played) {
 
 bool LibraryView::startRemotePlay(const Remote::PlayRequest& r) {
     std::vector<JellyfinItem> items;
-    std::vector<JellyfinAudioItem> audio;
     bool ok = false;
-    runWithLoading([&]() { ok = client.getItemsByIds(serverUrl, auth, r.ids, items, audio); });
+    runWithLoading([&]() { ok = client.getItemsByIds(serverUrl, auth, r.ids, items); });
     if (!ok) { SYS_Report("[Remote] play: no such item\n"); return false; }
     int idx = 0;
     for (int i = 0; i < (int)items.size(); ++i)
         if (items[i].id == r.ids[r.startIndex]) { idx = i; break; }
 
-    if (items[idx].type == "Audio") {   /* the tracks, as a queue */
-        pendingMusicTracks.clear();
-        pendingMusicTrackIdx = 0;
-        for (int i = 0; i < (int)items.size(); ++i) {
-            if (items[i].type != "Audio") continue;
-            if (i == idx) pendingMusicTrackIdx = (int)pendingMusicTracks.size();
-            MusicTrack t;
-            t.id           = audio[i].id;
-            t.title        = audio[i].name;
-            t.artist       = audio[i].artist;
-            t.album        = audio[i].album;
-            t.runtimeTicks = audio[i].runtimeTicks;
-            pendingMusicTracks.push_back(t);
-        }
-        pendingPlayIsMusic = true;
-        SYS_Report("[Remote] play: %u track(s)\n", (unsigned)pendingMusicTracks.size());
-        return true;
+    if (items[idx].type == "Audio") {   /* WiiFlix plays films and series only */
+        SYS_Report("[Remote] play: audio, not played\n");
+        return false;
     }
     /* a video: its page, then playback as with A on it (episodes find
      * their series themselves for next / previous) */
@@ -1262,7 +1011,7 @@ bool LibraryView::update(ir_t& ir) {
         const bool paged = pageKey() != page0, moved = focusKey() != focus0;
         if (done) {
             /* playback has its own sound (preparePlay, App); leaving with B */
-            if (back && pendingPlayUrl.empty() && !pendingPlayIsMusic) SoundFX::play(SoundFX::FX::Back);
+            if (back && pendingPlayUrl.empty()) SoundFX::play(SoundFX::FX::Back);
         } else if (state != before) {
             if (!loadingState(before)) {
                 if (back)                        SoundFX::play(SoundFX::FX::Back);
@@ -1291,7 +1040,7 @@ bool LibraryView::update(ir_t& ir) {
 }
 
 // Open an item picked on a mixed list (carousel home): series go to their
-// seasons, albums and playlists to their tracks, the rest to the detail page.
+// seasons, a season to its episodes, the rest to the detail page.
 void LibraryView::openItem(const JellyfinItem& it, State returnState) {
     if (it.type == "Series") {
         currentSeriesId    = it.id;
@@ -1307,16 +1056,6 @@ void LibraryView::openItem(const JellyfinItem& it, State returnState) {
         currentSeasonName = it.name;
         episodesFromHome  = (returnState == State::LibsReady);
         state = State::EpisodesLoad;
-    } else if (it.type == "MusicAlbum" || it.type == "Playlist") {
-        musicAlbumId     = it.id;
-        musicAlbumName   = it.name;
-        musicAlbumArtist.clear();
-        musicTracks.clear();
-        musicTrackSel   = 0;
-        musicTrackTop   = 0;
-        musicIsPlaylist = (it.type == "Playlist");
-        tracksFromHome  = (returnState == State::LibsReady);
-        state = State::MusicTracksLoad;
     } else {
         detailItemId        = it.id;
         detailReturnState   = returnState;
@@ -1336,8 +1075,7 @@ void LibraryView::openLibrary(int index) {
         sortGenres.clear();
     }
     posterMode       = !Ui::listMode() &&
-                       (currentLibType == "movies" || currentLibType == "tvshows" || currentLibType == "boxsets" ||
-                        currentLibType == "music");
+                       (currentLibType == "movies" || currentLibType == "tvshows" || currentLibType == "boxsets");
     inItemsDrilldown = false;
     if (currentLibType == "movies") {
         movieTab          = 0;
@@ -1350,12 +1088,6 @@ void LibraryView::openLibrary(int index) {
     if (currentLibType == "tvshows") {
         tvTab   = 0;
         tvLibId = currentLibId;
-    }
-    if (currentLibType == "music") {
-        musicTab        = 0;
-        musicOpening    = true;   /* no album at all: the Songs tab (loadItems) */
-        musicLibId      = currentLibId;
-        musicIsPlaylist = false;
     }
     itemPage = 0;
     state = State::ItemsInit;
@@ -1387,14 +1119,11 @@ bool LibraryView::updateState(ir_t& ir) {
         case State::SeasonsLoad:           loadSeasons();            return false;
         case State::EpisodesLoad:          loadEpisodes();           return false;
         case State::DetailLoad:            loadDetail();             return false;
-        case State::MusicTracksLoad:       loadMusicTracks();        return false;
         case State::CollectionsLoad:       loadMovieCollections();   return false;
         case State::FavoritesLoad:         loadMovieFavorites();     return false;
         case State::MovieSuggestionsLoad:  loadMovieSuggestions();   return false;
         case State::TVSuggestionsLoad:     loadTVSuggestions();      return false;
         case State::TVUpcomingLoad:        loadTVUpcoming();         return false;
-        case State::MusicSuggestionsLoad:  loadMusicSuggestions();   return false;
-        case State::PlaylistsLoad:         loadPlaylistsTab();       return false;
         case State::GlobalFavoritesLoad:   loadGlobalFavorites();    return false;
         case State::SearchLoad:            performSearch();          return false;
         case State::SpecialsLoad:          loadSpecials();           return false;
@@ -1406,13 +1135,10 @@ bool LibraryView::updateState(ir_t& ir) {
         case State::PostersReady:          return updatePosterGrid(ir, aPressed);
         case State::SeasonsReady:          return updateSeasons(ir, aPressed);
         case State::SpecialsReady:         return updateSpecials(ir, aPressed);
-        case State::PhotoReady:            return updatePhoto(ir, aPressed);
         case State::EpisodesReady:         return updateEpisodes(ir, aPressed);
-        case State::MusicTracksReady:      return updateMusicTracks(ir, aPressed);
         case State::MovieSuggestionsReady: return updateMovieSuggestions(ir, aPressed);
         case State::TVSuggestionsReady:    return updateTVSuggestions(ir, aPressed);
         case State::TVUpcomingReady:       return updateTVUpcoming(ir, aPressed);
-        case State::MusicSuggestionsReady: return updateMusicSuggestions(ir, aPressed);
         case State::DetailReady:           return updateDetail(ir, aPressed);
         case State::ResumePrompt:          return updateResumePrompt(ir, aPressed);
         case State::SearchInput:           return updateSearchInput(ir);
@@ -1422,7 +1148,7 @@ bool LibraryView::updateState(ir_t& ir) {
             if (Input::isBackPressed() || (aPressed && (!irMode || ir.valid))) return true;
             return false;
 
-        default:   // PlaylistsReady: playlists open in the item list
+        default:
             return false;
     }
     return false;
@@ -1438,11 +1164,9 @@ bool LibraryView::render(ir_t& ir) {
         state == State::ItemsInit || state == State::ItemsLoad ||
         state == State::PostersLoad || state == State::DetailLoad ||
         state == State::SeasonsLoad || state == State::EpisodesLoad ||
-        state == State::MusicTracksLoad ||
         state == State::CollectionsLoad || state == State::FavoritesLoad ||
         state == State::MovieSuggestionsLoad ||
         state == State::TVSuggestionsLoad || state == State::TVUpcomingLoad ||
-        state == State::MusicSuggestionsLoad || state == State::PlaylistsLoad ||
         state == State::GlobalFavoritesLoad || state == State::SearchLoad ||
         /* the carousel home is built on the next update: no tile grid
          * flashing in between */
@@ -1501,13 +1225,10 @@ bool LibraryView::render(ir_t& ir) {
     case State::PostersReady:           renderPosterGrid(ir); break;
     case State::SeasonsReady:           renderSeasons(ir); break;
     case State::SpecialsReady:          renderSpecials(ir); break;
-    case State::PhotoReady:             renderPhoto(ir); break;
     case State::EpisodesReady:          renderEpisodes(ir); break;
-    case State::MusicTracksReady:       renderMusicTracks(ir); break;
     case State::MovieSuggestionsReady:  renderMovieSuggestions(ir); break;
     case State::TVSuggestionsReady:     renderTVSuggestions(ir); break;
     case State::TVUpcomingReady:        renderTVUpcoming(ir); break;
-    case State::MusicSuggestionsReady:  renderMusicSuggestions(ir); break;
     case State::DetailReady:            drawDetailView(ir); break;
     case State::ResumePrompt:           drawDetailView(ir); renderResumePrompt(); break;
     case State::SearchInput:            renderSearchInput(ir); break;

@@ -7,7 +7,6 @@
 #include <string>
 #include "../jellyfin/JellyfinClient.h"
 #include "../jellyfin/RemoteControl.h"
-#include "MusicPlayerView.h"
 #include "CoverLine.h"
 #include "Keyboard.h"
 #include "ListFeed.h"
@@ -36,7 +35,7 @@ public:
     /* Why update() returned true with nothing to play: B on the libraries
      * or the profile menu's choice */
     /* SignIn: the server refused the profile's token, its password again */
-    enum class Exit { Profiles, WiiFinMenu, NowPlaying, SignIn };
+    enum class Exit { Profiles, WiiFinMenu, SignIn };
     Exit exitTo = Exit::Profiles;
     bool signInAgain = false;   /* loadLibraries: the token refused, leave for the sign-in */
 
@@ -54,11 +53,6 @@ public:
     long long   pendingPlayRuntimeTicks  = 0; // RunTimeTicks from Jellyfin (for progress bar duration)
     JellyfinClient::PlaybackChoice pendingPlayHow; // direct play or transcode
 
-    // Music play request (set when returning true from a music library)
-    bool                              pendingPlayIsMusic  = false;
-    std::vector<MusicTrack>  pendingMusicTracks;
-    int                               pendingMusicTrackIdx = 0;
-    bool                              pendingMusicShuffle  = false;  // the player starts shuffled
 
     // Episode list context for the player overlay (next/prev navigation)
     // Non-empty only when playing a TV-show episode.
@@ -98,8 +92,6 @@ private:
         DetailLoad,   // blocking: load full item metadata + large poster
         DetailReady,  // show item detail page
         ResumePrompt, // ask Continue / Start Over when playbackPositionTicks > 0
-        MusicTracksLoad, // blocking: fetch audio tracks for a MusicAlbum
-        MusicTracksReady,// show track list for an album
         CollectionsLoad,      // blocking: fetch BoxSet collections
         FavoritesLoad,        // blocking: fetch favourite movies
         MovieSuggestionsLoad, // blocking: fetch continue-watching + recently-added movies
@@ -108,10 +100,6 @@ private:
         TVSuggestionsReady,   // show TV suggestions tab (two horizontal rows)
         TVUpcomingLoad,       // blocking: fetch upcoming (unaired) episodes
         TVUpcomingReady,      // show Upcoming tab (single horizontal row)
-        MusicSuggestionsLoad, // blocking: fetch recently-added albums
-        MusicSuggestionsReady,// show music suggestions tab (single card row)
-        PlaylistsLoad,        // blocking: fetch playlists
-        PlaylistsReady,       // show playlists list
         GlobalFavoritesLoad,  // blocking: fetch all-library favourites
         GlobalFavoritesReady, // show global favourites poster grid
         SearchInput,          // virtual keyboard for search query
@@ -119,7 +107,6 @@ private:
         SearchReady,          // show search results
         SpecialsLoad,         // blocking: a film's or a series' special features
         SpecialsReady,        // show them (LibrarySpecials.cpp)
-        PhotoReady,           // a photo, the folder's others with Left / Right (LibraryPhotos.cpp)
         Error
     };
     State state = State::LibsInit;
@@ -143,7 +130,7 @@ private:
     bool posterMode    = false;   // true → poster grid; false → text list
     bool globFavMode   = false;   // true → loadPosters() targets GlobalFavoritesReady
 
-    // Parent drilldown state (e.g. music artist → albums)
+    // Parent drilldown state (a folder inside a library)
     std::string parentLibId;
     std::string parentLibName;
     int         parentItemPage   = 0;
@@ -265,17 +252,6 @@ private:
     int episodeSel = 0;
     int episodeTop = 0;
 
-    // Music track browsing
-    std::string                       musicAlbumId;
-    std::string                       musicAlbumName;
-    std::string                       musicAlbumArtist;
-    std::vector<JellyfinAudioItem>    musicTracks;
-    int  musicTrackSel = 0;
-    int  musicTrackTop = 0;
-    static const int MUSIC_TRACKS_VISIBLE = 8;
-    void loadMusicTracks();
-    void clampMusicTrackScroll();
-
     // Continue Watching / Next Up (activity page)
     std::vector<JellyfinItem> continueItems;
     GRRLIB_texImg*            cwTextures[3]     = {};
@@ -306,12 +282,6 @@ private:
     std::string tvLibId;         // root tvshows library id
     State       seasonsCallerState = State::PostersReady; // where B goes from season list
 
-    // Music tabs (only active when currentLibType == "music")
-    int         musicTab       = 0;     // 0 Albums, 1 Suggestions, 2 Artists, 3 Playlists, 4 Songs
-    bool        musicOpening   = false; // the library just opened (Songs if no album)
-    std::string musicLibId;             // root music library id
-    bool        musicIsPlaylist = false;// true when MusicTracksLoad should use getPlaylistTracks
-
     // Movie suggestions tab data
     std::vector<JellyfinItem> movieContItems;          // continue-watching movies (up to 4)
     GRRLIB_texImg*            movieContTex[4]   = {};
@@ -340,11 +310,6 @@ private:
     int tvUpcomingSel = 0;
     int tvUpcomingOff = 0;
 
-    // Music suggestions tab data (recently added albums)
-    std::vector<JellyfinItem> musicRecentItems;        // recently added albums (up to 8)
-    GRRLIB_texImg*            musicRecentTex[8] = {};
-    int musicSuggestSel = 0;
-    int musicSuggestOff = 0;
     static const int SUGG_VISIBLE = 4; // cards shown per row (4 × 130px + 3 × 20px gap = 580 fits in 640)
     // Pre-computed display strings for activity cards (built once at load time,
     // avoids per-frame Text::width truncation loops that drop frame rate)
@@ -362,23 +327,9 @@ private:
     void loadDetail();
     void preparePlay(long long startTicks, const std::vector<JellyfinEpisode>* queue = nullptr);
     bool startShuffle(const std::string& seasonId);   /* "" = whole series */
-    /* 2 in music: an album or a playlist (its id), or every song of the
-     * library ("": the server draws them), played shuffled */
-    bool startMusicShuffle(const std::string& id, bool playlist);
-    /* 2 in a music video library: clips drawn by the server, one after
-     * the other like a shuffled series */
-    bool startVideoShuffle();
-    /* a playlist of videos (its list): from the one at index from, or all
-     * of them shuffled, one after the other like a series' episodes */
-    bool playPlaylistVideos(const std::vector<JellyfinAudioItem>& list, int from, bool shuffle);
-    /* the music library's query for its tab (or an artist's albums) */
-    std::string musicFilter() const;
     /* a film or series library's list (List views): its tab's titles */
     std::string listFilter() const;
     bool tabbedList() const;   /* that list shows the library's tabs */
-    /* A on an album, a playlist, an artist or a song, in the list or the
-     * grid (idx: its place there); true when a track starts */
-    bool openMusicItem(const JellyfinItem& sel, int idx);
     void loadSeasons();
     void loadEpisodes();
     void loadMovieCollections();
@@ -390,9 +341,6 @@ private:
     void freeTVSuggestions();
     void loadTVUpcoming();
     void freeTVUpcoming();
-    void loadMusicSuggestions();
-    void freeMusicSuggestions();
-    void loadPlaylistsTab();
     void runWithLoading(std::function<void()> fn);
     void freePosters();
     void freeDetail();
@@ -456,17 +404,6 @@ private:
     int         specialsGroup = -1;    // folders: -1 the kinds, else the kind shown
     bool        specialsFolders() const;   // many of several kinds: a folder per kind
     void        openSpecials(const std::string& id, const std::string& name, State back);
-    /* the photos of a folder, one at a time (a slideshow with A) */
-    std::vector<JellyfinItem> photos;
-    int            photoSel = 0;
-    GRRLIB_texImg* photoTex = nullptr;
-    bool           slideshow = false;
-    u64            photoShownAt = 0;
-    State          photoBack = State::ItemsReady;
-    void openPhotos(const std::string& id, State back);
-    void showPhoto(int i);
-    bool updatePhoto(ir_t& ir, bool aPressed);
-    void renderPhoto(ir_t& ir);
     void        loadSpecials();
     bool        updateSpecials(ir_t& ir, bool aPressed);
     void        renderSpecials(ir_t& ir);
@@ -482,7 +419,6 @@ private:
     void        openSortPanel();
     void        updateSortPanel();
     void        renderSortPanel();
-    bool       tracksFromHome = false;  // album opened from the carousel home
     bool       episodesFromHome = false; // season opened from the carousel home
     bool flixHome() const;
     /* The interface sounds: what is highlighted, which page or tab is
@@ -490,8 +426,8 @@ private:
     unsigned focusKey() const;
     unsigned pageKey() const;
     static bool loadingState(State s);   /* a screen that only fetches */
-    /* "Play on..." from the server (Remote): the items fetched, then the
-     * music player or the video's page and playback; true = play it */
+    /* "Play on..." from the server (Remote): the item fetched, then the
+     * video's page and playback; true = play it */
     bool startRemotePlay(const Remote::PlayRequest& r);
     bool updateState(ir_t& ir);
     void openItem(const JellyfinItem& it, State returnState);
@@ -516,9 +452,6 @@ private:
     void renderSeasons(ir_t& ir);
     bool updateEpisodes(ir_t& ir, bool aPressed);
     void renderEpisodes(ir_t& ir);
-    // LibraryMusic.cpp
-    bool updateMusicTracks(ir_t& ir, bool aPressed);
-    void renderMusicTracks(ir_t& ir);
     // LibrarySuggestions.cpp
     static const int SG_X0  = 15;        // suggestion rows: first card
     static const int SG_CW  = POSTER_W;  // card width (130)
@@ -535,8 +468,6 @@ private:
     void renderTVSuggestions(ir_t& ir);
     bool updateTVUpcoming(ir_t& ir, bool aPressed);
     void renderTVUpcoming(ir_t& ir);
-    bool updateMusicSuggestions(ir_t& ir, bool aPressed);
-    void renderMusicSuggestions(ir_t& ir);
     // LibraryDetail.cpp (and drawDetailView)
     bool updateDetail(ir_t& ir, bool aPressed);
     bool updateResumePrompt(ir_t& ir, bool aPressed);

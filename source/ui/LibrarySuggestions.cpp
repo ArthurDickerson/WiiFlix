@@ -1,4 +1,4 @@
-/* LibraryView: Library tabs with rows of cards: movie, TV and music suggestions, coming up. */
+/* LibraryView: Library tabs with rows of cards: movie and TV suggestions, coming up. */
 #include "LibraryView.h"
 #include "LibraryDraw.h"
 #include "Ui.h"
@@ -234,76 +234,6 @@ bool LibraryView::updateTVUpcoming(ir_t& ir, bool aPressed) {
     return false;
 }
 
-bool LibraryView::updateMusicSuggestions(ir_t& ir, bool aPressed) {
-    if (Input::isBackPressed()) {
-        freeMusicSuggestions();
-        state = State::LibsReady;
-        return false;
-    }
-    // Tab switch with -/+
-    if (Input::isLPressed()) {
-        freeMusicSuggestions();
-        musicTab = 0;   /* Albums */
-        itemPage = 0;
-        currentLibId = musicLibId;
-        state = State::ItemsInit;
-        return false;
-    }
-    if (Input::isRPressed()) {
-        freeMusicSuggestions();
-        musicTab = 2;   /* Artists */
-        itemPage = 0;
-        currentLibId = musicLibId;
-        state = State::ItemsInit;
-        return false;
-    }
-    {
-        int nr = (int)musicRecentItems.size();
-        int cols = 4;
-        int rows = (nr + cols - 1) / cols;
-        int curRow = musicSuggestSel / cols;
-        int curCol = musicSuggestSel % cols;
-
-        if (Input::isLeftPressed()  && curCol > 0) {
-            musicSuggestSel--; irMode = false;
-        }
-        if (Input::isRightPressed() && curCol < cols - 1 && musicSuggestSel + 1 < nr) {
-            musicSuggestSel++; irMode = false;
-        }
-        if (Input::isUpPressed()   && curRow > 0) {
-            musicSuggestSel -= cols; irMode = false;
-        }
-        if (Input::isDownPressed() && curRow < rows - 1
-                                  && musicSuggestSel + cols < nr) {
-            musicSuggestSel += cols; irMode = false;
-        }
-        if (musicSuggestSel < 0) musicSuggestSel = 0;
-        if (musicSuggestSel >= nr && nr > 0) musicSuggestSel = nr - 1;
-        /* the album under the pointer (grid as renderMusicSuggestions draws
-         * it): only the D-pad moved the selection, so A opened the first */
-        if (irMode && ir.valid) {
-            const int AC = 120, GAP = 18, GRID_X = (640 - (4 * AC + 3 * GAP)) / 2;
-            for (int i = 0; i < nr && i < cols * 2; i++) {
-                int cx = GRID_X + (i % cols) * (AC + GAP), cy = i < cols ? 74 : 74 + AC + 16 + 18;
-                if (ir.x >= cx && ir.x < cx + AC && ir.y >= cy && ir.y < cy + AC) musicSuggestSel = i;
-            }
-        }
-
-        if (aPressed && nr > 0 && musicSuggestSel < nr) {
-            const JellyfinItem& item = musicRecentItems[musicSuggestSel];
-            musicAlbumId     = item.id;
-            musicAlbumName   = item.name;
-            musicAlbumArtist.clear();
-            musicTracks.clear();
-            musicTrackSel    = 0;
-            musicTrackTop    = 0;
-            musicIsPlaylist  = false;
-            state = State::MusicTracksLoad;
-        }
-    }
-    return false;
-}
-
 // Movie Suggestions (continue watching + recently added)
 void LibraryView::renderMovieSuggestions(ir_t& ir) {
     const Ui::Palette& p = Ui::pal();
@@ -377,51 +307,3 @@ void LibraryView::renderTVUpcoming(ir_t& ir) {
     Ui::footer(l, 2, r, 1);
 }
 
-// Music Suggestions (recently added albums)
-void LibraryView::renderMusicSuggestions(ir_t& ir) {
-    const Ui::Palette& p = Ui::pal();
-    Ui::tabs(320, 10, kMusicTabs, 5, musicTab, 14);
-    headerLine(46);
-
-    // 2-row × 4-col grid of album art cards
-    const int COLS    = 4;
-    const int AC_CW   = 120;  // square album card
-    const int AC_CH   = 120;
-    const int AC_GAP  = 18;
-    const int AC_LABEL= 16;   // label height below card
-    const int AC_RSTRIDE = AC_CH + AC_LABEL + 18; // row stride
-    const int GRID_W  = COLS * AC_CW + (COLS - 1) * AC_GAP;
-    const int GRID_X  = (640 - GRID_W) / 2;
-    const int HDR_Y   = 56;   // section header
-    const int ROW0_Y  = 74;   // first row starts after header + gap
-    const int ROW1_Y  = ROW0_Y + AC_RSTRIDE;
-
-    int nr = (int)musicRecentItems.size();
-    sectionLabel(GRID_X, HDR_Y, tr("RECENTLY ADDED"), nr > 0);
-
-    auto drawAlbumCard = [&](int col, int cardY, int i) {
-        int  cx  = GRID_X + col * (AC_CW + AC_GAP);
-        int  visW = (int)(AC_CW * WiiUtils::wsScaleX() + 0.5f);
-        bool sel = (i == musicSuggestSel);
-        bool hov = ir.valid && ir.x >= cx && ir.x < cx + AC_CW
-                            && ir.y >= cardY && ir.y < cardY + AC_CH;
-        drawThumb(musicRecentTex[i], cx, cardY, AC_CW, AC_CH, focusOf(sel, hov), -1.0f,
-                  musicRecentItems[i].name.c_str());
-        titleText(1, cx + 1, cardY + AC_CH + 5, visW, filterDejaVu(musicRecentItems[i].name, 200), 12,
-                  (sel || hov) ? p.text : p.textDim, sel);
-    };
-
-    if (nr == 0) {
-        Ui::textCentered(320, 200, tr("No recent albums"), 16, p.textDim);
-    } else {
-        for (int pass = 0; pass < 2; pass++) {
-            for (int i = 0; i < nr && i < COLS * 2; i++) {
-                if ((i == musicSuggestSel) != (pass == 1)) continue;
-                drawAlbumCard(i % COLS, i < COLS ? ROW0_Y : ROW1_Y, i);
-            }
-        }
-    }
-    const Ui::Hint l[] = { { "A", N_("Open") }, { "B", N_("Back") } };
-    const Ui::Hint r[] = { { "-/+", N_("Tab") } };
-    Ui::footer(l, 2, r, 1);
-}

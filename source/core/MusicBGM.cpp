@@ -1,6 +1,5 @@
 #include "MusicBGM.h"
 #include "SoundFX.h"
-#include "MusicSession.h"
 
 #include <asndlib.h>
 #include <mp3player.h>
@@ -80,7 +79,6 @@ void MusicBGM::pause() {
 }
 
 void MusicBGM::resume() {
-    if (MusicSession::active()) return;   /* the audio is MPlayer's: ASND stays off */
     if (s_asndRunning) {   /* pause() normally ended it: never end ASND twice */
         ASND_End();
         s_asndRunning = false;

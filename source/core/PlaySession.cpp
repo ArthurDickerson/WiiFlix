@@ -2,7 +2,6 @@
 #include "AppInternal.h"
 #include "Input.h"
 #include "MusicBGM.h"
-#include "MusicSession.h"
 #include "SoundFX.h"
 #include "Log.h"
 #include "Lang.h"
@@ -172,8 +171,7 @@ bool runPlaySession(JellyfinClient& client,
     JellyfinClient::PlaybackChoice how = lv.pendingPlayHow;
     bool allowDirect = true;
 
-    /* ao_gekko needs the DSP: the music session stops, ASND goes off */
-    MusicSession::stop(false);
+    /* ao_gekko needs the DSP: ASND goes off */
     MusicBGM::pause();
 
     PlayerView view(font, cursorTex, ringTex);
@@ -520,10 +518,10 @@ bool runPlaySession(JellyfinClient& client,
              * volume change reported at once: lastProgressAt); something else
              * to play ("Play on..."): the library starts it */
             if (!stopRequested && Remote::hasPlay()) requestStop(PLAYER_STOP_EOF, N_("Stopping..."));
-            Remote::PlayRequest queued;   /* "Play next" during a video: music only */
+            Remote::PlayRequest queued;   /* "Play next" during a video: not supported */
             if (Remote::takeQueue(queued)) {
                 SYS_Report("[Remote] queue during a video: not supported\n");
-                view.toast(tr("Play next / Add to queue: music only"), 2500);
+                view.toast(tr("Play next / Add to queue: not available"), 2500);
             }
             for (Remote::Command rc; !stopRequested && Remote::poll(rc); ) {
                 switch (rc.cmd) {

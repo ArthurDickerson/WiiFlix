@@ -14,8 +14,6 @@
  *
  *   Video sessions run on a dedicated thread (wii_player_start) so WiiFin's
  *   main loop keeps drawing the UI; frames come through vo_wiifin.c.
- *   Audio sessions (wii_player_play_audio) block the caller and drive the
- *   music UI from a background thread.
  */
 
 #include "WiiPlayer.h"
@@ -326,7 +324,7 @@ static void* playThreadFunc(void*)
     /* Discard the 3 s RESUME_PAD back-off at demuxer level so output starts
      * at the exact target position.  Always given: MPlayer keeps its options
      * from one run to the next, and the last -ss came back on a film played
-     * from the start, or a music track (3 s of it gone after a resume). */
+     * from the start. */
     char ssBuf[16];
     snprintf(ssBuf, sizeof(ssBuf), "%.1f", g_wiifin_ss_secs > 0.0f ? (double)g_wiifin_ss_secs : 0.0);
     addArg("-ss"); addArg(ssBuf);
@@ -464,84 +462,3 @@ void wii_player_set_volume(int v)
 void wii_player_set_mute(int on) { s_muted = on ? 1 : 0; sendVolume(); }
 int  wii_player_volume(void)     { return s_volume; }
 int  wii_player_muted(void)      { return s_muted; }
-
-/* -----------------------------------------------------------------------
- * Music (audio-only) path
- * ----------------------------------------------------------------------- */
-static void (*s_music_tick_cb)(int paused) = nullptr;
-
-static lwp_t        s_bg_thread = LWP_THREAD_NULL;
-static volatile int s_bg_stop   = 0;
-static uint8_t      s_bg_stack[48 * 1024] DEAD_AT_EXIT __attribute__((aligned(32)));
-
-/* With -vo null MPlayer never scans the Wiimote: the main thread reads the
- * controllers and draws; this thread only ticks the music session ~60
- * times a second (reports, end of a track, the remote control). */
-static void* audioThreadFunc(void*)
-{
-    while (!s_bg_stop) {
-        if (g_app_powerOff || g_app_reset) {
-            g_player_stop_reason = PLAYER_STOP_EOF;
-            async_quit_request   = 1;
-        }
-        if (s_music_tick_cb) s_music_tick_cb(g_mplayer_paused);
-        usleep(16000);
-    }
-    return nullptr;
-}
-
-int wii_player_play_audio(const char* url)
-{
-    char volBuf[8];
-    snprintf(volBuf, sizeof(volBuf), "%d", s_muted ? 0 : (int)s_volume);
-    const char* argv[] = {
-        "mplayer",
-        "-noconsolecontrols",
-        "-v",
-        "-fs",
-        "-vo", "null",              /* audio-only: GRRLIB stays active */
-        "-ao", "gekko",
-        "-cache", "2048",
-        "-cache-min", "5",
-        "-autosync", "30",
-        "-demuxer", "audio",        /* lavf can't probe non-seekable HTTP MP3 */
-        "-aid", "-1",               /* a video's -aid would stay otherwise */
-        "-ss", "0",                 /* and its -ss: the track started that far in */
-        "-volume", volBuf,          /* WiiFin's volume (wii_player_volume) */
-        url,
-        nullptr
-    };
-    const int argc = (int)(sizeof(argv) / sizeof(argv[0])) - 1;
-
-    resetControlState();
-
-    s_bg_stop = 0;
-    LWP_CreateThread(&s_bg_thread, audioThreadFunc, nullptr,
-                     s_bg_stack, sizeof(s_bg_stack), 40);
-
-    SYS_STDIO_Report(true);
-    logUrl("play_audio", url);
-
-    int rc = runMplayer(argc, argv);
-
-    s_bg_stop = 1;
-    if (s_bg_thread != LWP_THREAD_NULL) {
-        LWP_JoinThread(s_bg_thread, nullptr);
-        s_bg_thread = LWP_THREAD_NULL;
-    }
-    s_music_tick_cb   = nullptr;
-
-    SYS_Report("[WiiPlayer] play_audio exited rc=%d reason=%d\n",
-               rc, (int)g_player_stop_reason);
-    return (int)g_player_stop_reason;
-}
-
-void wii_player_stop(void)
-{
-    async_quit_request = 1;
-}
-
-void wii_player_set_music_tick(void (*cb)(int paused))
-{
-    s_music_tick_cb = cb;
-}

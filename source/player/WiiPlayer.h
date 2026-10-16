@@ -145,22 +145,4 @@ extern void (*g_stream_opened_cb)(void);
 #ifdef __cplusplus
 }
 
-/* -----------------------------------------------------------------------
- * Music (audio-only) playback path — blocking.
- *
- * wii_player_play_audio() runs MPlayer with -vo null on the calling thread
- * (the music session's).  A background thread calls the music tick callback
- * at ~60 Hz meanwhile, with no buttons: the screen and the controllers are
- * the main thread's.
- * ----------------------------------------------------------------------- */
-
-/* Play audio-only URL; returns a PLAYER_STOP_* code. */
-int wii_player_play_audio(const char* url);
-
-/* Ask the running audio session to stop. */
-void wii_player_stop(void);
-
-/* Register the music session's tick (nullptr to clear): paused or not. */
-void wii_player_set_music_tick(void (*cb)(int paused));
-
 #endif

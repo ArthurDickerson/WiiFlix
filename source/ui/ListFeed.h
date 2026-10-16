@@ -29,7 +29,7 @@ public:
 
     /* filter: the query part selecting the titles, e.g. "ParentId=<id>",
      * with a sort of its own maybe ("&SortBy=...": then no letter jumps);
-     * or a whole route and query of its own ("/Artists/AlbumArtists?...") */
+     * or a whole route and query of its own ("/Items/...") */
     bool open(const std::string& filter, std::string& err);
     void close();
     bool isOpen() const { return opened; }

@@ -1317,7 +1317,10 @@ bool JellyfinClient::getLibraries(const std::string& serverUrl,
         lib.id             = c->self->jsonGetString(obj, "Id");
         lib.name           = c->self->jsonGetString(obj, "Name");
         lib.collectionType = c->self->jsonGetString(obj, "CollectionType");
-        if (!lib.id.empty() && !lib.name.empty() && lib.collectionType != "books")
+        /* WiiFlix is for films and series: their libraries (and the
+         * collections) only, never music, photos or books */
+        const std::string& t = lib.collectionType;
+        if (!lib.id.empty() && !lib.name.empty() && (t == "movies" || t == "tvshows" || t == "boxsets"))
             c->out->push_back(lib);
     }, &ctx);
 
@@ -1370,53 +1373,6 @@ bool JellyfinClient::getItems(const std::string& serverUrl,
 }
 
 // ---------------------------------------------------------------------------
-// Fetch albums for an artist by AlbumArtistIds (more reliable than ParentId
-// for artist items returned by /Search/Hints which may differ from the tree)
-// ---------------------------------------------------------------------------
-bool JellyfinClient::getAlbumsByArtist(const std::string& serverUrl,
-                                        const JellyfinAuth& auth,
-                                        const std::string& artistId,
-                                        int startIndex, int limit,
-                                        std::vector<JellyfinItem>& out,
-                                        int& totalCount) {
-    char qs[512];
-    snprintf(qs, sizeof(qs),
-        "/Users/%s/Items"
-        "?AlbumArtistIds=%s"
-        "&IncludeItemTypes=MusicAlbum"
-        "&Recursive=true"
-        "&SortBy=SortName&SortOrder=Ascending"
-        "&Fields=ProductionYear,UserData,RunTimeTicks"
-        "&EnableImages=false"
-        "&Limit=%d&StartIndex=%d",
-        auth.userId.c_str(), artistId.c_str(), limit, startIndex);
-    std::string url  = serverUrl + qs;
-    std::string resp;
-    int status = httpRequest(url, "GET", "", "", auth.accessToken, resp);
-    if (status != 200) {
-        if (status >= 0) errMsg = "getAlbumsByArtist failed (HTTP " + std::to_string(status) + ")";
-        return false;
-    }
-
-    totalCount = jsonGetInt(resp, "TotalRecordCount");
-
-    struct Ctx { JellyfinClient* self; std::vector<JellyfinItem>* out; };
-    Ctx ctx{ this, &out };
-    forEachItemObject(resp, [](const std::string& obj, void* vctx) {
-        Ctx* c = static_cast<Ctx*>(vctx);
-        JellyfinItem item;
-        item.id   = c->self->jsonGetString(obj, "Id");
-        item.name = c->self->jsonGetString(obj, "Name");
-        item.type = c->self->jsonGetString(obj, "Type");
-        item.year = c->self->jsonGetInt(obj, "ProductionYear");
-        if (!item.id.empty() && !item.name.empty())
-            c->out->push_back(item);
-    }, &ctx);
-
-    return true;
-}
-
-// ---------------------------------------------------------------------------
 // Fetch raw bytes for an item's primary image (JPEG)
 // ---------------------------------------------------------------------------
 bool JellyfinClient::getItemImageBytes(const std::string& serverUrl,
@@ -1433,15 +1389,6 @@ bool JellyfinClient::getItemImageBytes(const std::string& serverUrl,
     std::string url = serverUrl + qs;
     int status = httpRequest(url, "GET", "", "", auth.accessToken, outBytes);
     return status == 200;
-}
-
-bool JellyfinClient::getPhotoBytes(const std::string& serverUrl, const JellyfinAuth& auth,
-                                   const std::string& itemId, int maxWidth, int maxHeight,
-                                   std::string& outBytes) {
-    char qs[192];
-    snprintf(qs, sizeof(qs), "/Items/%s/Images/Primary?maxWidth=%d&maxHeight=%d&quality=85&format=Jpg",
-             itemId.c_str(), maxWidth, maxHeight);
-    return httpRequest(serverUrl + qs, "GET", "", "", auth.accessToken, outBytes) == 200;
 }
 
 // ---------------------------------------------------------------------------
@@ -1973,7 +1920,7 @@ bool JellyfinClient::getFavoriteMovies(const std::string& serverUrl,
 }
 
 // ---------------------------------------------------------------------------
-// Global favourites — all favourite items (Movie, Series, MusicAlbum) server-wide
+// Global favourites — all favourite items (Movie, Series, Episode) server-wide
 // ---------------------------------------------------------------------------
 bool JellyfinClient::getGlobalFavorites(const std::string& serverUrl,
                                          const JellyfinAuth& auth,
@@ -1982,7 +1929,7 @@ bool JellyfinClient::getGlobalFavorites(const std::string& serverUrl,
                                          int& totalCount) {
     char qs[512];
     snprintf(qs, sizeof(qs),
-        "/Users/%s/Items?IncludeItemTypes=Movie,Series,Episode,MusicAlbum"
+        "/Users/%s/Items?IncludeItemTypes=Movie,Series,Episode"
         "&Filters=IsFavorite"
         "&SortBy=SortName&SortOrder=Ascending"
         "&Fields=ProductionYear,UserData,RunTimeTicks"
@@ -2251,150 +2198,6 @@ bool JellyfinClient::getTVUpcoming(const std::string& serverUrl,
         item.seasonNumber  = c->self->jsonGetInt(obj,    "ParentIndexNumber");
         item.episodeNumber = c->self->jsonGetInt(obj,    "IndexNumber");
         item.runtimeTicks  = c->self->jsonGetLongLong(obj, "RunTimeTicks");
-        if (!item.id.empty())
-            c->out->push_back(item);
-    }, &ctx);
-    return true;
-}
-
-// ---------------------------------------------------------------------------
-// Recently added music albums — /Users/{id}/Items/Latest (raw array)
-// ---------------------------------------------------------------------------
-bool JellyfinClient::getMusicLatest(const std::string& serverUrl,
-                                     const JellyfinAuth& auth,
-                                     const std::string& parentId,
-                                     int limit,
-                                     std::vector<JellyfinItem>& out) {
-    // Use standard Items endpoint sorted by DateCreated desc so we always
-    // return up to `limit` albums regardless of when they were added.
-    char qs[512];
-    snprintf(qs, sizeof(qs),
-        "/Users/%s/Items?ParentId=%s&IncludeItemTypes=MusicAlbum"
-        "&SortBy=DateCreated,SortName&SortOrder=Descending,Ascending"
-        "&Recursive=true&Limit=%d"
-        "&Fields=ProductionYear,UserData,RunTimeTicks&EnableImages=false",
-        auth.userId.c_str(), parentId.c_str(), limit);
-    std::string url  = serverUrl + qs;
-    std::string resp;
-    int status = httpRequest(url, "GET", "", "", auth.accessToken, resp);
-    if (status != 200) return false;
-
-    // Standard envelope: {"Items":[...], "TotalRecordCount":N}
-    size_t arrPos = resp.find("\"Items\"");
-    if (arrPos == std::string::npos) return true;
-    arrPos = resp.find('[', arrPos);
-    if (arrPos == std::string::npos) return true;
-    resp = resp.substr(arrPos); // trim to the array
-
-    // Response is a raw JSON array "[{...},{...}]"
-    size_t pos = 0;
-    while (pos < resp.size() && resp[pos] != '[') pos++;
-    if (pos >= resp.size()) return true;
-    pos++;
-    while (pos < resp.size()) {
-        while (pos < resp.size() && resp[pos] != '{' && resp[pos] != ']') pos++;
-        if (pos >= resp.size() || resp[pos] == ']') break;
-        int depth = 0; bool inStr = false;
-        size_t objStart = pos;
-        for (; pos < resp.size(); pos++) {
-            char c = resp[pos];
-            if (inStr) {
-                if      (c == '\\') { pos++; }
-                else if (c == '"')  { inStr = false; }
-            } else {
-                if      (c == '"') { inStr = true; }
-                else if (c == '{') { depth++; }
-                else if (c == '}') { if (--depth == 0) { pos++; break; } }
-            }
-        }
-        std::string obj = resp.substr(objStart, pos - objStart);
-        JellyfinItem item;
-        item.id   = jsonGetString(obj, "Id");
-        item.name = jsonGetString(obj, "Name");
-        item.type = jsonGetString(obj, "Type");
-        item.year = jsonGetInt(obj, "ProductionYear");
-        if (!item.id.empty() && !item.name.empty())
-            out.push_back(item);
-    }
-    return true;
-}
-
-// ---------------------------------------------------------------------------
-// All playlists — paginated
-// ---------------------------------------------------------------------------
-bool JellyfinClient::getPlaylists(const std::string& serverUrl,
-                                   const JellyfinAuth& auth,
-                                   int startIndex, int limit,
-                                   std::vector<JellyfinItem>& out,
-                                   int& totalCount) {
-    char qs[512];
-    snprintf(qs, sizeof(qs),
-        "/Users/%s/Items?IncludeItemTypes=Playlist"
-        "&SortBy=SortName&SortOrder=Ascending"
-        "&Fields=ProductionYear,UserData,RunTimeTicks"
-        "&EnableImages=false&Recursive=true"
-        "&Limit=%d&StartIndex=%d",
-        auth.userId.c_str(), limit, startIndex);
-    std::string url  = serverUrl + qs;
-    std::string resp;
-    int status = httpRequest(url, "GET", "", "", auth.accessToken, resp);
-    if (status != 200) {
-        if (status >= 0) errMsg = "getPlaylists failed (HTTP " + std::to_string(status) + ")";
-        return false;
-    }
-    totalCount = jsonGetInt(resp, "TotalRecordCount");
-    struct Ctx { JellyfinClient* self; std::vector<JellyfinItem>* out; };
-    Ctx ctx{ this, &out };
-    forEachItemObject(resp, [](const std::string& obj, void* vctx) {
-        Ctx* c = static_cast<Ctx*>(vctx);
-        JellyfinItem item;
-        item.id   = c->self->jsonGetString(obj, "Id");
-        item.name = c->self->jsonGetString(obj, "Name");
-        item.type = c->self->jsonGetString(obj, "Type");
-        if (!item.id.empty() && !item.name.empty())
-            c->out->push_back(item);
-    }, &ctx);
-    return true;
-}
-
-// ---------------------------------------------------------------------------
-// Audio items inside a playlist — /Playlists/{id}/Items
-// ---------------------------------------------------------------------------
-bool JellyfinClient::getPlaylistTracks(const std::string& serverUrl,
-                                        const JellyfinAuth& auth,
-                                        const std::string& playlistId,
-                                        std::vector<JellyfinAudioItem>& out) {
-    char qs[512];
-    snprintf(qs, sizeof(qs),
-        "/Playlists/%s/Items?UserId=%s"
-        "&Fields=ProductionYear,UserData,RunTimeTicks"
-        "&EnableImages=false",
-        playlistId.c_str(), auth.userId.c_str());
-    std::string url  = serverUrl + qs;
-    std::string resp;
-    int status = httpRequest(url, "GET", "", "", auth.accessToken, resp);
-    if (status != 200) return false;
-    struct Ctx { JellyfinClient* self; std::vector<JellyfinAudioItem>* out; };
-    Ctx ctx{ this, &out };
-    forEachItemObject(resp, [](const std::string& obj, void* vctx) {
-        Ctx* c = static_cast<Ctx*>(vctx);
-        // songs, and the videos of a playlist of them
-        std::string type = c->self->jsonGetString(obj, "Type");
-        const bool video = type == "Movie" || type == "Episode" || type == "Video" || type == "MusicVideo";
-        if (type != "Audio" && !video) return;
-        JellyfinAudioItem item;
-        item.id                    = c->self->jsonGetString(obj, "Id");
-        item.name                  = c->self->jsonGetString(obj, "Name");
-        item.video                 = video;
-        if (type == "Episode") {   /* "Series - Episode" */
-            std::string series = c->self->jsonGetString(obj, "SeriesName");
-            if (!series.empty()) item.name = series + " - " + item.name;
-        }
-        item.artist                = c->self->jsonGetString(obj, "AlbumArtist");
-        item.album                 = c->self->jsonGetString(obj, "Album");
-        item.trackNumber           = video ? 0 : c->self->jsonGetInt(obj, "IndexNumber");
-        item.runtimeTicks          = c->self->jsonGetLongLong(obj, "RunTimeTicks");
-        item.playbackPositionTicks = c->self->jsonGetLongLong(obj, "PlaybackPositionTicks");
         if (!item.id.empty())
             c->out->push_back(item);
     }, &ctx);
@@ -3177,10 +2980,6 @@ bool JellyfinClient::getSubtitleSrt(const std::string& serverUrl,
     return st == 200 && !outSrt.empty();
 }
 
-// ---------------------------------------------------------------------------
-// Fetch Audio tracks for a MusicAlbum
-// GET /Users/{userId}/Items?ParentId={albumId}&IncludeItemTypes=Audio
-// ---------------------------------------------------------------------------
 bool JellyfinClient::getIsFavorite(const std::string& serverUrl, const JellyfinAuth& auth,
                                     const std::string& itemId, bool& favorite, int* specials)
 {
@@ -3226,24 +3025,22 @@ bool JellyfinClient::getSpecialFeatures(const std::string& serverUrl, const Jell
 bool JellyfinClient::getItemsByIds(const std::string& serverUrl,
                                     const JellyfinAuth& auth,
                                     const std::vector<std::string>& ids,
-                                    std::vector<JellyfinItem>& outItems,
-                                    std::vector<JellyfinAudioItem>& outAudio)
+                                    std::vector<JellyfinItem>& outItems)
 {
     outItems.clear();
-    outAudio.clear();
     if (ids.empty()) return false;
     std::string list;
     for (size_t i = 0; i < ids.size() && i < 200; ++i) list += (i ? "," : "") + ids[i];
     std::string url = serverUrl + "/Users/" + auth.userId + "/Items?Ids=" + list +
-                      "&Fields=RunTimeTicks,AlbumArtist,Album,SeriesId&EnableImages=false";
+                      "&Fields=RunTimeTicks,SeriesId&EnableImages=false";
     std::string resp;
     int status = httpRequest(url, "GET", "", "", auth.accessToken, resp, 2u << 20);
     if (status != 200) {
         if (status >= 0) errMsg = "getItemsByIds failed (HTTP " + std::to_string(status) + ")";
         return false;
     }
-    struct Ctx { JellyfinClient* self; std::vector<JellyfinItem> items; std::vector<JellyfinAudioItem> audio; };
-    Ctx ctx{ this, {}, {} };
+    struct Ctx { JellyfinClient* self; std::vector<JellyfinItem> items; };
+    Ctx ctx{ this, {} };
     forEachItemObject(resp, [](const std::string& obj, void* vctx) {
         Ctx* c = static_cast<Ctx*>(vctx);
         JellyfinItem it;
@@ -3252,127 +3049,13 @@ bool JellyfinClient::getItemsByIds(const std::string& serverUrl,
         it.type         = c->self->jsonGetString(obj, "Type");
         it.seriesId     = c->self->jsonGetString(obj, "SeriesId");
         it.runtimeTicks = c->self->jsonGetLongLong(obj, "RunTimeTicks");
-        JellyfinAudioItem a;
-        a.id           = it.id;
-        a.name         = it.name;
-        a.artist       = c->self->jsonGetString(obj, "AlbumArtist");
-        a.album        = c->self->jsonGetString(obj, "Album");
-        a.runtimeTicks = it.runtimeTicks;
-        if (!it.id.empty()) { c->items.push_back(it); c->audio.push_back(a); }
+        if (!it.id.empty()) c->items.push_back(it);
     }, &ctx);
     /* the server's order is its own: back to the one asked for */
     for (const std::string& id : ids)
         for (size_t i = 0; i < ctx.items.size(); ++i)
-            if (ctx.items[i].id == id) { outItems.push_back(ctx.items[i]); outAudio.push_back(ctx.audio[i]); break; }
+            if (ctx.items[i].id == id) { outItems.push_back(ctx.items[i]); break; }
     return !outItems.empty();
-}
-
-bool JellyfinClient::getAlbumTracks(const std::string& serverUrl,
-                                     const JellyfinAuth& auth,
-                                     const std::string& albumId,
-                                     std::vector<JellyfinAudioItem>& out)
-{
-    char qs[512];
-    snprintf(qs, sizeof(qs),
-        "/Users/%s/Items?ParentId=%s"
-        "&IncludeItemTypes=Audio"
-        "&SortBy=SortName&SortOrder=Ascending"
-        "&Fields=TrackNumber,RunTimeTicks,UserData,AlbumArtist,Album"
-        "&EnableImages=false&Limit=500",
-        auth.userId.c_str(), albumId.c_str());
-    std::string url  = serverUrl + qs;
-    std::string resp;
-    int status = httpRequest(url, "GET", "", "", auth.accessToken, resp);
-    if (status != 200) {
-        if (status >= 0) errMsg = "getAlbumTracks failed (HTTP " + std::to_string(status) + ")";
-        return false;
-    }
-
-    struct Ctx { JellyfinClient* self; std::vector<JellyfinAudioItem>* out; };
-    Ctx ctx{ this, &out };
-    forEachItemObject(resp, [](const std::string& obj, void* vctx) {
-        Ctx* c = static_cast<Ctx*>(vctx);
-        JellyfinAudioItem item;
-        item.id                    = c->self->jsonGetString(obj, "Id");
-        item.name                  = c->self->jsonGetString(obj, "Name");
-        item.artist                = c->self->jsonGetString(obj, "AlbumArtist");
-        item.album                 = c->self->jsonGetString(obj, "Album");
-        item.trackNumber           = c->self->jsonGetInt(obj, "IndexNumber");
-        item.runtimeTicks          = c->self->jsonGetLongLong(obj, "RunTimeTicks");
-        item.playbackPositionTicks = c->self->jsonGetLongLong(obj, "PlaybackPositionTicks");
-        if (!item.id.empty()) c->out->push_back(item);
-    }, &ctx);
-
-    return true;
-}
-
-// ---------------------------------------------------------------------------
-// Music player: one track's details, favourites, autoplay
-// ---------------------------------------------------------------------------
-namespace {
-/* The strings of "key":["a","b"] */
-std::vector<std::string> jsonStringArray(const std::string& json, const std::string& key) {
-    std::vector<std::string> out;
-    size_t p = json.find("\"" + key + "\":[");
-    if (p == std::string::npos) return out;
-    p += key.size() + 4;
-    while (p < json.size() && json[p] != ']') {
-        if (json[p] != '"') { ++p; continue; }
-        std::string raw;
-        for (++p; p < json.size() && json[p] != '"'; ++p) {
-            if (json[p] == '\\' && p + 1 < json.size()) raw += json[p++];
-            raw += json[p];
-        }
-        ++p;
-        out.push_back(decodeJsonString(raw));
-    }
-    return out;
-}
-} // namespace
-
-bool JellyfinClient::getAudioTrackInfo(const std::string& serverUrl,
-                                       const JellyfinAuth& auth,
-                                       const std::string& itemId,
-                                       AudioTrackInfo& out)
-{
-    out = AudioTrackInfo();
-    std::string resp;
-    if (httpRequest(serverUrl + "/Users/" + auth.userId + "/Items/" + itemId, "GET", "", "",
-                    auth.accessToken, resp) != 200)
-        return false;
-    for (const std::string& a : jsonStringArray(resp, "Artists"))
-        out.artists += (out.artists.empty() ? "" : ", ") + a;
-    if (out.artists.empty()) out.artists = jsonGetString(resp, "AlbumArtist");
-    out.album         = jsonGetString(resp, "Album");
-    out.albumId       = jsonGetString(resp, "AlbumId");
-    out.parentId      = jsonGetString(resp, "ParentId");
-    out.year          = jsonGetInt(resp, "ProductionYear");
-    out.isFavorite    = jsonGetBool(resp, "IsFavorite");
-    out.hasImage      = resp.find("\"ImageTags\":{\"Primary\"") != std::string::npos;
-    out.albumHasImage = !jsonGetString(resp, "AlbumPrimaryImageTag").empty();
-    out.hasLyrics     = jsonGetBool(resp, "HasLyrics");
-    return true;
-}
-
-bool JellyfinClient::getLyrics(const std::string& serverUrl, const JellyfinAuth& auth,
-                               const std::string& itemId, std::vector<LyricLine>& out)
-{
-    out.clear();
-    std::string resp;
-    if (httpRequest(serverUrl + "/Audio/" + itemId + "/Lyrics", "GET", "", "", auth.accessToken, resp) != 200)
-        return false;
-    size_t at = resp.find("\"Lyrics\":");
-    size_t pos = at == std::string::npos ? std::string::npos : resp.find('[', at);
-    if (pos == std::string::npos) return true;
-    pos++;
-    std::string obj;
-    while (out.size() < 1000 && !(obj = nextJsonObject(resp, pos)).empty()) {
-        LyricLine l;
-        l.text = jsonGetString(obj, "Text");
-        if (obj.find("\"Start\":") != std::string::npos) l.startTicks = jsonGetLongLong(obj, "Start");
-        out.push_back(l);
-    }
-    return true;
 }
 
 bool JellyfinClient::setPlayed(const std::string& serverUrl, const JellyfinAuth& auth,
@@ -3407,169 +3090,8 @@ bool JellyfinClient::setFavorite(const std::string& serverUrl,
     return st == 200 || st == 204;
 }
 
-bool JellyfinClient::getAutoplayTracks(const std::string& serverUrl,
-                                       const JellyfinAuth& auth,
-                                       const std::string& itemId,
-                                       const std::string& parentId,
-                                       int limit,
-                                       std::vector<JellyfinAudioItem>& out)
-{
-    out.clear();
-    auto fetch = [&](const std::string& pathAndQuery) {
-        std::string resp;
-        if (httpRequest(serverUrl + pathAndQuery, "GET", "", "", auth.accessToken, resp) != 200)
-            return;
-        struct Ctx { JellyfinClient* self; std::vector<JellyfinAudioItem>* out; const std::string* skip; };
-        Ctx ctx{ this, &out, &itemId };
-        forEachItemObject(resp, [](const std::string& obj, void* vctx) {
-            Ctx* c = static_cast<Ctx*>(vctx);
-            JellyfinAudioItem it;
-            it.id           = c->self->jsonGetString(obj, "Id");
-            it.name         = c->self->jsonGetString(obj, "Name");
-            it.artist       = c->self->jsonGetString(obj, "AlbumArtist");
-            it.album        = c->self->jsonGetString(obj, "Album");
-            it.runtimeTicks = c->self->jsonGetLongLong(obj, "RunTimeTicks");
-            if (!it.id.empty() && it.id != *c->skip && c->self->jsonGetString(obj, "Type") == "Audio")
-                c->out->push_back(it);
-        }, &ctx);
-    };
-    char q[256];
-    snprintf(q, sizeof(q), "/Items/%s/InstantMix?UserId=%s&Limit=%d&Fields=RunTimeTicks&EnableImages=false",
-             itemId.c_str(), auth.userId.c_str(), limit);
-    fetch(q);
-    if (out.empty() && !parentId.empty()) {
-        snprintf(q, sizeof(q), "/Users/%s/Items?ParentId=%s&IncludeItemTypes=Audio&Recursive=true"
-                 "&SortBy=Random&Limit=%d&Fields=RunTimeTicks&EnableImages=false",
-                 auth.userId.c_str(), parentId.c_str(), limit);
-        fetch(q);
-    }
-    SYS_Report("[Music] autoplay: %u tracks\n", (unsigned)out.size());
-    return !out.empty();
-}
-
 // ---------------------------------------------------------------------------
-// Build a direct audio stream URL via POST /Items/{id}/PlaybackInfo.
-// Requests an audio-only MP3 transcode so MPlayer can play it without video.
-// ---------------------------------------------------------------------------
-bool JellyfinClient::getAudioStreamUrl(const std::string& serverUrl,
-                                        const JellyfinAuth& auth,
-                                        const std::string& itemId,
-                                        long long startTimeTicks,
-                                        std::string& outUrl,
-                                        std::string& outPlaySessionId,
-                                        std::string* outPlayMethod,
-                                        int* outAudioIndex)
-{
-    /* Step 1: POST PlaybackInfo with AutoOpenLiveStream:false to obtain a
-     * PlaySessionId only, without opening any server-side transcode session.
-     * We do NOT use the TranscodingUrl from this response — for audio items
-     * Jellyfin often returns a video container URL (TS MPEG2VIDEO) which is
-     * wrong.  Instead we build the /Audio/universal URL ourselves (step 2). */
-    char fullUrl[512];
-    snprintf(fullUrl, sizeof(fullUrl),
-        "%s/Items/%s/PlaybackInfo"
-        "?UserId=%s&DeviceId=%s",
-        serverUrl.c_str(), itemId.c_str(), auth.userId.c_str(), s_deviceId.c_str());
-
-    char bodyBuf[512];
-    snprintf(bodyBuf, sizeof(bodyBuf),
-        "{\"UserId\":\"%s\","
-        "\"MediaSourceId\":\"%s\","
-        "\"StartTimeTicks\":%lld,"
-        "\"IsPlayback\":true,"
-        "\"AutoOpenLiveStream\":false,"
-        "\"EnableDirectPlay\":false,"
-        "\"EnableDirectStream\":false}",
-        auth.userId.c_str(), itemId.c_str(), (long long)startTimeTicks);
-
-    SYS_Report("[AudioPlaybackInfo] POST %s\n", fullUrl);
-
-    std::string resp;
-    int status = httpRequest(fullUrl, "POST", "application/json", bodyBuf,
-                             auth.accessToken, resp);
-    if (status != 200) {
-        errMsg = "AudioPlaybackInfo HTTP ";
-        char tmp[16]; snprintf(tmp, sizeof(tmp), "%d", status);
-        errMsg += tmp;
-        return false;
-    }
-
-    outPlaySessionId = jsonGetString(resp, "PlaySessionId");
-    if (outPlaySessionId.empty()) {
-        SYS_Report("[AudioPlaybackInfo] No PlaySessionId in response (first 256): %.256s\n",
-                   resp.c_str());
-        errMsg = N_("No PlaySessionId in AudioPlaybackInfo response");
-        return false;
-    }
-
-    /* Sent as it is when MPlayer CE plays it (its audio demuxer reads MP3,
-     * FLAC and WAV): MP3 up to 320 kb/s, FLAC and WAV in stereo up to 48 kHz
-     * (the Wii outputs 16-bit stereo at 48 kHz: more is converted on its
-     * CPU for nothing).  Anything else is transcoded to MP3.
-     * Not /Audio/{id}/universal: it opens a PlaybackInfo of its own and
-     * runs the transcode under that PlaySessionId, so the server took our
-     * reports for direct play and the transcode was never stopped. */
-    std::string container = jsonGetString(resp, "Container");
-    std::string codec;
-    int bitrate = 0, index = 0, rate = 0, channels = 0, bits = 0;
-    {
-        size_t t = resp.find("\"Type\":\"Audio\"");
-        if (t != std::string::npos) {
-            size_t o = resp.rfind('{', t), e = resp.find('}', t);
-            if (o != std::string::npos && e != std::string::npos) {
-                std::string stream = resp.substr(o, e - o + 1);
-                codec    = jsonGetString(stream, "Codec");
-                bitrate  = jsonGetInt(stream, "BitRate");
-                index    = jsonGetInt(stream, "Index");
-                rate     = jsonGetInt(stream, "SampleRate");
-                channels = jsonGetInt(stream, "Channels");
-                bits     = jsonGetInt(stream, "BitDepth");
-            }
-        }
-    }
-    const bool mp3  = container == "mp3" && codec == "mp3";
-    const bool flac = container == "flac" && codec == "flac";
-    const bool wav  = container == "wav" && (codec == "pcm_s16le" || codec == "pcm_s24le");
-    /* why not, in Jellyfin's words, for the dashboard */
-    std::string why;
-    auto add = [&](const char* r) { why += (why.empty() ? "" : ",") + std::string(r); };
-    if (!mp3 && !flac && !wav) {
-        if (container != "mp3" && container != "flac" && container != "wav") add("ContainerNotSupported");
-        else add("AudioCodecNotSupported");
-    }
-    if (mp3 && bitrate > 320000) add("AudioBitrateNotSupported");
-    if ((flac || wav) && rate > 48000) add("AudioSampleRateNotSupported");
-    if ((flac || wav) && bits > 24) add("AudioBitDepthNotSupported");
-    if (channels > 2) add("AudioChannelsNotSupported");
-    const bool direct = why.empty();
-    if (outPlayMethod) *outPlayMethod = direct ? "DirectPlay" : "Transcode";
-    if (outAudioIndex) *outAudioIndex = index;
-    SYS_Report("[AudioPlaybackInfo] %s %s %d kb/s %d Hz %d ch: %s%s\n", container.c_str(), codec.c_str(),
-               bitrate / 1000, rate, channels, direct ? "sent as it is" : "transcoded to MP3, ",
-               why.c_str());
-
-    char audioUrl[1024];
-    std::string schemedSvr = addScheme(serverUrl);
-    if (direct)
-        snprintf(audioUrl, sizeof(audioUrl),
-            "%s/Audio/%s/stream?static=true&MediaSourceId=%s&DeviceId=%s&PlaySessionId=%s&ApiKey=%s",
-            schemedSvr.c_str(), itemId.c_str(), itemId.c_str(), s_deviceId.c_str(),
-            outPlaySessionId.c_str(), auth.accessToken.c_str());
-    else
-        snprintf(audioUrl, sizeof(audioUrl),
-            "%s/Audio/%s/stream.mp3?MediaSourceId=%s&DeviceId=%s&PlaySessionId=%s"
-            "&AudioCodec=mp3&AudioBitRate=320000&MaxAudioChannels=2&StartTimeTicks=%lld"
-            "&TranscodeReasons=%s&ApiKey=%s",
-            schemedSvr.c_str(), itemId.c_str(), itemId.c_str(), s_deviceId.c_str(),
-            outPlaySessionId.c_str(), (long long)startTimeTicks, why.c_str(), auth.accessToken.c_str());
-    outUrl = audioUrl;
-
-    SYS_Report("[AudioPlaybackInfo] sessionId=%s\n", outPlaySessionId.c_str());
-    return true;
-}
-
-// ---------------------------------------------------------------------------
-// Search items across all libraries via /Search/Hints (covers MusicArtist too)
+// Search items across all libraries via /Search/Hints (films and series)
 // ---------------------------------------------------------------------------
 bool JellyfinClient::searchItems(const std::string& serverUrl,
                                   const JellyfinAuth& auth,
@@ -3596,7 +3118,7 @@ bool JellyfinClient::searchItems(const std::string& serverUrl,
         "?searchTerm=%s"
         "&userId=%s"
         "&limit=%d"
-        "&includeItemTypes=Movie,Series,Episode,MusicAlbum,Audio,MusicArtist,BoxSet,Playlist",
+        "&includeItemTypes=Movie,Series,Episode,BoxSet",
         encoded.c_str(), auth.userId.c_str(), limit);
 
     std::string url  = serverUrl + qs;
@@ -3703,7 +3225,6 @@ bool JellyfinClient::getItemsByQuery(const std::string& serverUrl,
         item.childCount            = c->self->jsonGetInt(obj,    "ChildCount");
         item.recursiveItemCount    = c->self->jsonGetInt(obj,    "RecursiveItemCount");
         item.sortName              = c->self->jsonGetString(obj, "SortName");
-        item.artist                = c->self->jsonGetString(obj, "AlbumArtist");
         if (!item.id.empty() && !item.name.empty())
             c->out->push_back(item);
     }, &ctx);

@@ -5,13 +5,13 @@
 struct JellyfinLibrary {
     std::string id;
     std::string name;
-    std::string collectionType; // "movies", "tvshows", "music", "books", ...
+    std::string collectionType; // "movies", "tvshows", "boxsets" (getLibraries keeps those)
 };
 
 struct JellyfinItem {
     std::string id;
     std::string name;
-    std::string type; // "Movie", "Series", "MusicAlbum", ...
+    std::string type; // "Movie", "Series", "Episode", ...
     int         year = 0;
     long long   playbackPositionTicks = 0;
     long long   runtimeTicks          = 0;
@@ -26,7 +26,6 @@ struct JellyfinItem {
     int         recursiveItemCount = 0;    // Series: episodes
     std::string sortName;                  // what the list is sorted on ("matrix" for "The Matrix")
     std::string extraType;                 // a special feature's: "Trailer", "Featurette"...
-    std::string artist;                    // an album's or a song's: AlbumArtist
 };
 
 struct JellyfinSeason {
@@ -102,36 +101,8 @@ struct JellyfinItemDetail {
     std::vector<JellyfinChapter> chapters;   /* of the version shown (the default file first) */
 };
 
-struct JellyfinAudioItem {
-    std::string id;
-    std::string name;        // track title
-    std::string artist;      // AlbumArtist
-    std::string album;
-    int         trackNumber      = 0;
-    long long   runtimeTicks     = 0;
-    long long   playbackPositionTicks = 0;
-    bool        video = false;   // a playlist's film, episode or clip
-};
 
-/* What the music player shows about the playing track (getAudioTrackInfo) */
-struct AudioTrackInfo {
-    std::string artists;           // "A, B", empty when untagged
-    std::string album;
-    std::string albumId;
-    std::string parentId;          // folder holding the file
-    int         year          = 0;
-    bool        isFavorite    = false;
-    bool        hasImage      = false;  // the track's own cover (embedded)
-    bool        albumHasImage = false;
-    bool        hasLyrics     = false;  // Jellyfin 10.9+: an .lrc beside it, or embedded
-};
 
-/* A line of a song's lyrics, from when it is sung (-1: the lyrics are not
- * timed) */
-struct LyricLine {
-    long long   startTicks = -1;
-    std::string text;
-};
 
 struct JellyfinAuth {
     std::string userId;
@@ -221,7 +192,7 @@ public:
     bool isNetworkReady() const { return networkReady; }
     const std::string& lastError() const { return errMsg; }
 
-    // Fetch user views (libraries: movies, tvshows, music...)
+    // Fetch user views: the films', the series' and the collections' libraries
     bool getLibraries(const std::string& serverUrl,
                       const JellyfinAuth& auth,
                       std::vector<JellyfinLibrary>& out);
@@ -248,13 +219,6 @@ public:
     bool getSpecialFeatures(const std::string& serverUrl, const JellyfinAuth& auth,
                             const std::string& itemId, std::vector<JellyfinItem>& out);
 
-    // Fetch albums for a specific artist (uses AlbumArtistIds, more reliable than ParentId)
-    bool getAlbumsByArtist(const std::string& serverUrl,
-                            const JellyfinAuth& auth,
-                            const std::string& artistId,
-                            int startIndex, int limit,
-                            std::vector<JellyfinItem>& out,
-                            int& totalCount);
 
     // Fetch raw image bytes for an item's primary thumbnail
     bool getItemImageBytes(const std::string& serverUrl,
@@ -262,10 +226,6 @@ public:
                            const std::string& itemId,
                            int maxWidth, int maxHeight,
                            std::string& outBytes);
-    /* a photo, whole (no crop), within maxWidth x maxHeight (JPEG) */
-    bool getPhotoBytes(const std::string& serverUrl, const JellyfinAuth& auth,
-                       const std::string& itemId, int maxWidth, int maxHeight,
-                       std::string& outBytes);
 
     // Fetch the best landscape image for activity cards:
     //   Episode → Images/Thumb, fallback series Backdrop, then Primary
@@ -323,7 +283,7 @@ public:
                            std::vector<JellyfinItem>& out,
                            int& totalCount);
 
-    // Fetch all favourites globally (Movie, Series, MusicAlbum) across all libraries (paginated)
+    // Fetch all favourites globally (Movie, Series, Episode) across all libraries (paginated)
     bool getGlobalFavorites(const std::string& serverUrl,
                             const JellyfinAuth& auth,
                             int startIndex, int limit,
@@ -360,25 +320,8 @@ public:
                        int limit,
                        std::vector<JellyfinItem>& out);
 
-    // Fetch recently added music albums via /Users/{id}/Items/Latest
-    bool getMusicLatest(const std::string& serverUrl,
-                        const JellyfinAuth& auth,
-                        const std::string& parentId,
-                        int limit,
-                        std::vector<JellyfinItem>& out);
 
-    // Fetch all playlists (paginated)
-    bool getPlaylists(const std::string& serverUrl,
-                      const JellyfinAuth& auth,
-                      int startIndex, int limit,
-                      std::vector<JellyfinItem>& out,
-                      int& totalCount);
 
-    // Fetch audio items inside a playlist
-    bool getPlaylistTracks(const std::string& serverUrl,
-                           const JellyfinAuth& auth,
-                           const std::string& playlistId,
-                           std::vector<JellyfinAudioItem>& out);
 
     // Fetch full item metadata (overview, genres, cast, runtime)
     bool getItemDetail(const std::string& serverUrl,
@@ -455,28 +398,13 @@ public:
                         int streamIndex,
                         std::string& outSrt);
 
-    // Items by id, in that order, with their type ("Play on..." sends ids):
-    // Audio ones with what the music player shows.
+    // Items by id, in that order, with their type ("Play on..." sends ids)
     bool getItemsByIds(const std::string& serverUrl,
                        const JellyfinAuth& auth,
                        const std::vector<std::string>& ids,
-                       std::vector<JellyfinItem>& outItems,
-                       std::vector<JellyfinAudioItem>& outAudio);
+                       std::vector<JellyfinItem>& outItems);
 
-    // Fetch tracks (Audio items) for a MusicAlbum
-    bool getAlbumTracks(const std::string& serverUrl,
-                        const JellyfinAuth& auth,
-                        const std::string& albumId,
-                        std::vector<JellyfinAudioItem>& out);
 
-    // Artists, album, year, favourite and covers of one track.
-    bool getAudioTrackInfo(const std::string& serverUrl,
-                           const JellyfinAuth& auth,
-                           const std::string& itemId,
-                           AudioTrackInfo& out);
-    /* a song's lyrics, line by line (/Audio/{id}/Lyrics, Jellyfin 10.9+) */
-    bool getLyrics(const std::string& serverUrl, const JellyfinAuth& auth,
-                   const std::string& itemId, std::vector<LyricLine>& out);
 
     // Mark an item watched or not watched (watched clears its resume point).
     bool setPlayed(const std::string& serverUrl, const JellyfinAuth& auth,
@@ -488,31 +416,7 @@ public:
                      const std::string& itemId,
                      bool favorite);
 
-    // Tracks to play after itemId once the queue runs out: Jellyfin's
-    // instant mix (same genres and artists), or when it has none (untagged
-    // files), random tracks of the same folder.  itemId itself is left out.
-    bool getAutoplayTracks(const std::string& serverUrl,
-                           const JellyfinAuth& auth,
-                           const std::string& itemId,
-                           const std::string& parentId,
-                           int limit,
-                           std::vector<JellyfinAudioItem>& out);
 
-    // Build a direct audio transcoding URL for an Audio item.
-    // Returns the full URL; empty string on failure.
-    // outPlaySessionId is filled for later reportPlaybackStopped calls.
-    // outPlayMethod: "DirectPlay" when the server sends the file as it is
-    // (MP3 up to 320 kb/s, FLAC and WAV in stereo up to 48 kHz), else
-    // "Transcode" (to MP3, the reasons in the URL); outAudioIndex: its
-    // audio stream.
-    bool getAudioStreamUrl(const std::string& serverUrl,
-                           const JellyfinAuth& auth,
-                           const std::string& itemId,
-                           long long startTimeTicks,
-                           std::string& outUrl,
-                           std::string& outPlaySessionId,
-                           std::string* outPlayMethod = nullptr,
-                           int* outAudioIndex = nullptr);
 
     // Direct play: the file as it is, when MPlayer CE decodes it in real
     // time on the Wii (a cautious device profile: SD MPEG-4 ASP, MPEG-1/2,
@@ -619,7 +523,7 @@ public:
                               const JellyfinAuth& auth,
                               const std::string& playSessionId);
 
-    // Search items across all libraries (Movie, Series, MusicAlbum, Audio)
+    // Search items across all libraries (Movie, Series, Episode, BoxSet)
     bool searchItems(const std::string& serverUrl,
                      const JellyfinAuth& auth,
                      const std::string& searchTerm,

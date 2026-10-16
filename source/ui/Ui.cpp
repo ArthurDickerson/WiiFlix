@@ -611,18 +611,6 @@ float hintWidth(const Hint& h)
  * its buttons do */
 void bottomBar(const Hint*, int, const Hint*, int) {}
 
-/* written by the music's thread (what plays: the footers said it, before
- * WiiFlix took them out): two lines, the one shown flipped once the other
- * is written */
-static char         s_nowPlaying[2][160];
-static volatile int s_nowPlayingAt = 0;
-void setNowPlaying(const std::string& line)
-{
-    const int w = 1 - s_nowPlayingAt;
-    snprintf(s_nowPlaying[w], sizeof(s_nowPlaying[w]), "%s", line.c_str());
-    s_nowPlayingAt = w;
-}
-
 void footer(const Hint*, int, const Hint*, int, const char*) {}
 
 static struct { float x[8], w[8], y, h; int n; u64 at; } s_tabBar;

@@ -70,36 +70,6 @@ bool LibraryView::updateSearchResults(ir_t& ir, bool aPressed) {
             seasonsCallerState = State::SearchReady;
             seasons.clear(); seasonSel = 0; seasonTop = 0;
             state = State::SeasonsLoad;
-        } else if (sel.type == "MusicAlbum") {
-            musicAlbumId     = sel.id;
-            musicAlbumName   = sel.name;
-            musicAlbumArtist.clear();
-            musicTracks.clear();
-            musicTrackSel = 0;
-            musicTrackTop = 0;
-            musicIsPlaylist = false;
-            state = State::MusicTracksLoad;
-        } else if (sel.type == "Playlist") {
-            musicAlbumId     = sel.id;
-            musicAlbumName   = sel.name;
-            musicAlbumArtist.clear();
-            musicTracks.clear();
-            musicTrackSel = 0;
-            musicTrackTop = 0;
-            musicIsPlaylist = true;
-            state = State::MusicTracksLoad;
-        } else if (sel.type == "MusicArtist") {
-            parentLibId      = currentLibId;
-            parentLibName    = currentLibName;
-            parentItemPage   = itemPage;
-            inItemsDrilldown    = true;
-            drilldownFromSearch = true;
-            currentLibId     = sel.id;
-            currentLibName   = sel.name;
-            currentLibType   = "music";
-            posterMode       = false;
-            itemPage         = 0;
-            state            = State::ItemsInit;
         } else if (sel.type == "BoxSet" && Ui::listMode()) {
             // text list of the collection; B comes back to the results
             inItemsDrilldown    = true;
@@ -119,16 +89,6 @@ bool LibraryView::updateSearchResults(ir_t& ir, bool aPressed) {
             itemPage          = 0;
             freePosters();
             state = State::ItemsInit;
-        } else if (sel.type == "Audio") {
-            MusicTrack t;
-            t.id    = sel.id;
-            t.title = sel.name;
-            t.runtimeTicks = sel.runtimeTicks;
-            pendingMusicTracks.clear();
-            pendingMusicTracks.push_back(t);
-            pendingMusicTrackIdx = 0;
-            pendingPlayIsMusic   = true;
-            return true;
         } else {
             detailItemId        = sel.id;
             detailReturnState   = State::SearchReady;
@@ -233,11 +193,7 @@ void LibraryView::renderSearchResults(ir_t& ir) {
             if      (type == "Movie")       { badge = N_("MOVIE");   bCol = 0x2D7DE0FF; }
             else if (type == "Series")      { badge = N_("SERIES");  bCol = 0xE0563FFF; }
             else if (type == "Episode")     { badge = N_("EP");      bCol = 0xC2453AFF; }
-            else if (type == "MusicAlbum")  { badge = N_("ALBUM");   bCol = 0x3DAF5AFF; }
-            else if (type == "Audio")       { badge = N_("TRACK");   bCol = 0x3DAF5AFF; }
-            else if (type == "MusicArtist") { badge = N_("ARTIST");  bCol = 0x2C9450FF; }
             else if (type == "BoxSet")      { badge = N_("COLLEC");  bCol = 0x8E54D6FF; }
-            else if (type == "Playlist")    { badge = N_("LIST");    bCol = 0x2A9FB0FF; }
             Ui::roundRect(LIST_X + 8, ry + 12, 54, 20, 10, Ui::mix(bCol, 0xFFFFFFFF, 0.15f), bCol);
             Ui::textCentered(LIST_X + 35, ry + 15, tr(badge), 10, 0xFFFFFFFF);
 

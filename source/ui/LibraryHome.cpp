@@ -5,7 +5,6 @@
 #include "../input/Input.h"
 #include "../core/SoundFX.h"
 #include "../core/Lang.h"
-#include "../core/MusicSession.h"
 #include <cmath>
 
 using namespace LibDraw;
@@ -394,12 +393,12 @@ void LibraryView::renderGlobalFavorites(ir_t& ir) {
             if (sel != (pass == 1)) continue;
             int px = POSTER_X0 + (i % POSTER_COLS) * POSTER_STRIDE_X;
             int py = GF_Y0 + (i / POSTER_COLS) * POSTER_STRIDE_Y;
-            /* centred in its cell at its own shape (square album covers) */
+            /* centred in its cell at its own shape (square collection covers) */
             const float th = fitHeight(posterTextures[i], POSTER_W, POSTER_H);
             const int   ty = py + (int)((POSTER_H - th) * 0.5f);
             drawThumb(posterTextures[i], px, ty, POSTER_W, th,
                       sel ? Ui::pulse() : 0.0f, -1.0f, items[i].name.c_str());
-            // Type badge (Movie / Series / Album)
+            // Type badge (Movie / Series)
             const char* badge = labelForType(items[i].type);
             int bw = Ui::textWidth(badge, 10) + 12;
             Ui::roundRect(px + 6, ty + th - 22, bw, 16, 8, 0x000000A0);
@@ -421,12 +420,10 @@ void LibraryView::renderGlobalFavorites(ir_t& ir) {
  * The profile menu (2): back to the libraries, the profiles, or the
  * WiiFlix menu
  * --------------------------------------------------------------- */
-static const char* const PROFILE_MENU[4] = {
-    N_("Now Playing"), N_("Back to Jellyfin"), N_("Switch Profile"), N_("WiiFlix Menu")
+static const char* const PROFILE_MENU[3] = {
+    N_("Back to Jellyfin"), N_("Switch Profile"), N_("WiiFlix Menu")
 };
-/* Now Playing, first, while a music session plays */
-static int pmFirst() { return MusicSession::active() ? 0 : 1; }
-static int pmCount() { return 4 - pmFirst(); }
+static int pmCount() { return 3; }
 static const int PM_W = 300, PM_BH = 42, PM_STEP = 54;
 static int pmTop() { return 240 - (pmCount() * PM_STEP + 50) / 2 + 50; }
 
@@ -441,7 +438,6 @@ void LibraryView::openProfileMenu() {
 bool LibraryView::updateProfileMenu(ir_t& ir) {
     if (Input::isBackPressed()) { profileMenu = false; SoundFX::play(SoundFX::FX::Back); return false; }
     const int was = profileMenuSel, n = pmCount();
-    if (profileMenuSel >= n) profileMenuSel = n - 1;   /* the music ended meanwhile */
     if (Input::isUpPressed())   profileMenuSel = (profileMenuSel + n - 1) % n;
     if (Input::isDownPressed()) profileMenuSel = (profileMenuSel + 1) % n;
     int hover = -1;
@@ -454,14 +450,12 @@ bool LibraryView::updateProfileMenu(ir_t& ir) {
     if (profileMenuSel != was) SoundFX::play(SoundFX::FX::Move);
     if (!Input::isAJustPressed() || (ir.valid && hover < 0)) return false;
     profileMenu = false;
-    const int entry = pmFirst() + profileMenuSel;
-    switch (entry) {
-    case 0: exitTo = Exit::NowPlaying; break;
-    case 1: SoundFX::play(SoundFX::FX::Back); return false;
-    case 2: exitTo = Exit::Profiles;   break;
+    switch (profileMenuSel) {
+    case 0: SoundFX::play(SoundFX::FX::Back); return false;
+    case 1: exitTo = Exit::Profiles;   break;
     default: exitTo = Exit::WiiFinMenu; break;
     }
-    SoundFX::play(entry == 0 ? SoundFX::FX::Open : SoundFX::FX::Back);
+    SoundFX::play(SoundFX::FX::Back);
     return true;
 }
 
@@ -474,7 +468,7 @@ void LibraryView::renderProfileMenu(ir_t& ir) {
     Ui::text(320 - PM_W / 2 + 28, top - 49, filterDejaVu(userName, 30).c_str(), 18, p.text);
     for (int i = 0; i < n; ++i) {
         profileMenuFocus[i] = Ui::approach(profileMenuFocus[i], i == profileMenuSel ? 1.0f : 0.0f);
-        Ui::button(320 - PM_W / 2, top + i * PM_STEP, PM_W, PM_BH, PROFILE_MENU[pmFirst() + i], 18,
+        Ui::button(320 - PM_W / 2, top + i * PM_STEP, PM_W, PM_BH, PROFILE_MENU[i], 18,
                    profileMenuFocus[i] > 0.01f ? Ui::pulse() * profileMenuFocus[i] : 0.0f);
     }
     const Ui::Hint l[] = { { "A", N_("Select") } };
