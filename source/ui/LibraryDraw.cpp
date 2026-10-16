@@ -156,10 +156,11 @@ u32 headerDim() {
 // Back chevron + title at the top left, shortened to maxW.
 void drawBreadcrumb(const std::string& title, int size, int maxW) {
     const Ui::Palette& p = Ui::pal();
-    float cy = 14 + size * 0.55f;
-    Ui::triangle(20, cy, 28, cy - 7, 28, cy + 7, Ui::headerBand() > 0 ? 0xFFFFFFFF : p.accent);
-    std::string t = fitText(Ui::font(), filterDejaVu(title, 60), size, maxW - 14);
-    Ui::text(34, 14, t.c_str(), size, p.text);
+    const bool band = Ui::headerBand() > 0;
+    const float x = band ? Ui::bandLeft() : 20, cy = 14 + size * 0.55f;
+    Ui::triangle(x, cy, x + 8, cy - 7, x + 8, cy + 7, band ? 0xFFFFFFFF : p.accent);
+    std::string t = fitText(Ui::font(), filterDejaVu(title, 60), size, maxW - 14 - (int)(x - 20));
+    Ui::text(x + 14, 14, t.c_str(), size, band ? 0xFFFFFFFF : p.text);
 }
 
 void drawCount(int page, int perPage, int shown, int total) {

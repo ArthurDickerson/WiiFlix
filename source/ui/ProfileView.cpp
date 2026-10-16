@@ -120,18 +120,19 @@ void ProfileView::render(ir_t& ir) {
     for (int i = 0; i < vis; i++) {
         focusAnim[i] = Ui::approach(focusAnim[i], i == focusedRow ? 1.0f : 0.0f);
         float f   = focusAnim[i];
-        float ry  = ROW_Y0 + i * ROW_H;
-        float g   = 6.0f * f;                       /* grow when focused */
-        float x = ROW_X - g, w = ROW_W + g * 2, y = ry - g * 0.3f, h = ROW_H - 8 + g * 0.6f;
+        float x = ROW_X, y = ROW_Y0 + i * ROW_H, w = ROW_W, h = ROW_H - 8;
         bool isAdd = (i == (int)profiles.size());
 
-        Ui::card(x, y, w, h, 16, f);
+        /* a rectangular button: orange (and a little bigger) when chosen */
+        Ui::button(x, y, w, h, "", 19, f, 3);
+        Ui::grow(x, y, w, h, 1.0f + (Ui::HOVER_GROW - 1.0f) * f);
+        const u32 ink = Ui::mix(pal.text, 0xFFFFFFFF, f), dim = Ui::mix(pal.textDim, 0xFFFFFFE0, f);
         float cx = x + 34, cy = y + h * 0.5f;
         if (isAdd) {
-            Ui::circle(cx, cy, 20, Ui::mix(pal.cardBorder, pal.accent, f));
-            Ui::circle(cx, cy, 17, pal.cardTop);
-            Ui::textCentered(cx, cy - 15, "+", 26, Ui::mix(pal.textDim, pal.accentDark, f));
-            Ui::text(x + 68, cy - 10, tr("Add New Profile"), 19, Ui::mix(pal.textDim, pal.accentDark, f));
+            Ui::circle(cx, cy, 20, Ui::mix(pal.cardBorder, 0xFFFFFFFF, f));
+            Ui::circle(cx, cy, 17, Ui::mix(pal.cardTop, Ui::HOVER_BOTTOM, f));
+            Ui::textCentered(cx, cy - 15, "+", 26, dim);
+            Ui::text(x + 68, cy - 10, tr("Add New Profile"), 19, ink);
             continue;
         }
         const SavedProfile& p = profiles[i];
@@ -144,8 +145,8 @@ void ProfileView::render(ir_t& ir) {
         char server[96];
         if (!p.serverName.empty()) snprintf(server, sizeof(server), "%s  \xe2\x80\xa2  %s", p.serverName.c_str(), p.serverUrl.c_str());
         else                       snprintf(server, sizeof(server), "%s", p.serverUrl.c_str());
-        Ui::text(x + 68, y + 9,  name,   20, pal.text);
-        Ui::text(x + 68, y + 34, server, 13, pal.textDim);
+        Ui::text(x + 68, y + 9,  name,   20, ink);
+        Ui::text(x + 68, y + 34, server, 13, dim);
     }
 
     /* Delete confirmation */
@@ -154,8 +155,10 @@ void ProfileView::render(ir_t& ir) {
         Ui::card(140, 170, 360, 130, 20, 0.0f);
         Ui::textCentered(320, 192, tr("Delete this profile?"), 21, pal.danger);
         Ui::textCentered(320, 222, tr("Its saved sign-in will be forgotten."), 14, pal.textDim);
-        Ui::button(170, 248, 140, 38, N_("Delete"), 17, 1.0f);
-        Ui::button(330, 248, 140, 38, N_("Cancel"), 17, 0.0f);
+        const bool onDelete = ir.valid && ir.x >= 170 && ir.x <= 310 && ir.y >= 248 && ir.y <= 286;
+        const bool onCancel = ir.valid && ir.x >= 330 && ir.x <= 470 && ir.y >= 248 && ir.y <= 286;
+        Ui::button(170, 248, 140, 38, N_("Delete"), 17, onDelete || !ir.valid ? 1.0f : 0.0f, 3);
+        Ui::button(330, 248, 140, 38, N_("Cancel"), 17, onCancel ? 1.0f : 0.0f, 3);
     }
 
     if (confirmDelete) {

@@ -788,11 +788,11 @@ void BrowseHome::drawHeader()
         GRRLIB_Rectangle(Ui::screenLeft(), 0, Ui::screenWidth(), 46, Ui::pal().bgTop, 1);
     }
 
-    /* Logo, top left: white and black letters, on the band as on the grey */
-    if (s_logo) {
+    /* the logo: the band draws it (Ui::drawHeaderBand); without the band,
+     * here at the top left */
+    if (s_logo && !L.band) {
         const float h = 36, w = h * s_logo->w / s_logo->h * WiiUtils::wsScaleX();
-        const float x = Ui::screenLeft() + 18, y = 4;
-        GRRLIB_DrawImg(x, y, s_logo, 0, w / s_logo->w, h / s_logo->h, 0xFFFFFFFF);
+        GRRLIB_DrawImg(Ui::screenLeft() + 18, 4, s_logo, 0, w / s_logo->w, h / s_logo->h, 0xFFFFFFFF);
     }
 
     /* "More rows above" arrow */

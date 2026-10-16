@@ -330,7 +330,7 @@ void LibraryView::renderHome(ir_t& ir) {
     }
     float tabX0 = Ui::tabs(320, 10, kHomeTabs, 3, homePage == 0 ? 0 : 1, 16);
     srvLabel = fitText(font, filterDejaVu(srvLabel, 40), 14, (int)tabX0 - 30);
-    Ui::text(20, 18, srvLabel.c_str(), 14, headerDim());
+    Ui::text(Ui::bandLeft(), 18, srvLabel.c_str(), 14, headerDim());
     headerLine(51);
 
     // Profile avatar – top right of header (click: back to the profile picker)
@@ -430,7 +430,7 @@ void LibraryView::renderHome(ir_t& ir) {
 void LibraryView::renderGlobalFavorites(ir_t& ir) {
     float tabX0 = Ui::tabs(320, 10, kHomeTabs, 3, 2, 16);
     std::string srv = fitText(font, filterDejaVu(auth.serverName, 40), 14, (int)tabX0 - 30);
-    Ui::text(20, 18, srv.c_str(), 14, headerDim());
+    Ui::text(Ui::bandLeft(), 18, srv.c_str(), 14, headerDim());
     headerLine(51);
 
     // Count top-right

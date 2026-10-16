@@ -1,6 +1,7 @@
 #include "Ui.h"
 #include "../core/Text.h"
 #include "../core/Lang.h"
+#include "../core/Utils.h"
 
 #include <gccore.h>
 #include <math.h>
@@ -401,6 +402,21 @@ void background(bool withBand)
 
 float headerBand() { return s_theme == Theme::Flix ? 44.0f : 0.0f; }
 
+/* the logo at the band's left: every screen's */
+static GRRLIB_texImg* s_logo = nullptr;
+static const float LOGO_X = 18, LOGO_H = 36;
+void setLogo(GRRLIB_texImg* logo) { s_logo = logo; }
+static float logoRight()
+{
+    if (!s_logo || s_logo->h == 0) return screenLeft();
+    return screenLeft() + LOGO_X + LOGO_H * s_logo->w / s_logo->h * WiiUtils::wsScaleX();
+}
+float bandLeft()
+{
+    const float x = logoRight() + 14;
+    return x > 20 ? x : 20;   /* 16:9: the logo is out in the side room */
+}
+
 void drawHeaderBand()
 {
     const float h = headerBand();
@@ -413,6 +429,11 @@ void drawHeaderBand()
     vtx(L, 0, RED); vtx(R, 0, RED); vtx(R, h, RED); vtx(L, h, RED);
     vtx(L, h, 0x00000040); vtx(R, h, 0x00000040); vtx(R, h + 3, 0x00000000); vtx(L, h + 3, 0x00000000);
     GX_End();
+    if (s_logo) {
+        const float w = LOGO_H * s_logo->w / s_logo->h * WiiUtils::wsScaleX();
+        GRRLIB_DrawImg(screenLeft() + LOGO_X, (h - LOGO_H) * 0.5f, s_logo, 0,
+                       w / s_logo->w, LOGO_H / s_logo->h, 0xFFFFFFFF);
+    }
 }
 
 void card(float x, float y, float w, float h, float r, float focus)
@@ -459,7 +480,8 @@ void button(float x, float y, float w, float h, const char* label, int size, flo
 void header(const char* title, const char* subtitle)
 {
     const Palette& p = pal();
-    text(28, 10 + (headerBand() > 0 ? 0 : 8), title, 24, headerBand() > 0 ? 0xFFFFFFFF : p.text);
+    text(headerBand() > 0 ? bandLeft() : 28, 10 + (headerBand() > 0 ? 0 : 8), title, 22,
+         headerBand() > 0 ? 0xFFFFFFFF : p.text);
     if (subtitle) textRight(612, headerBand() > 0 ? 16 : 24, subtitle, 15,
                             headerBand() > 0 ? 0xFFFFFFC0 : p.textDim);
     if (headerBand() <= 0) roundRect(28, 52, 584, 2, 1, alpha(p.cardBorder, 0.8f));
@@ -584,63 +606,14 @@ float hintWidth(const Hint& h)
     return (g > 0 ? g + 5 : 0) + textWidth(tr(h.label), 14) + 14;
 }
 
-void bottomBar(const Hint* left, int nLeft, const Hint* right, int nRight)
-{
-    const Palette& p = pal();
-    const float top = 424;
-    /* Wii-style bar: wide rounded slab with a light top edge */
-    const float L = screenLeft() - 20, W = screenWidth() + 40;
-    shadow(L, top - 2, W, 90, 34, 8.0f, p.shadow);
-    roundRect(L, top, W, 90, 34, p.barTop, p.barBottom);
-    roundBorder(L, top, W, 90, 34, 2.0f, p.barBorder);
+/* WiiFlix: no controls bar along the bottom (the old video channels had
+ * none), so these draw nothing; the calls stay where each screen says what
+ * its buttons do */
+void bottomBar(const Hint*, int, const Hint*, int) {}
 
-    /* clock */
-    time_t now = time(nullptr);
-    struct tm lt;
-    localtime_r(&now, &lt);
-    char clock[8], date[24];
-    /* TRANSLATORS: days of the week, abbreviated (the date under the clock) */
-    static const char* const days[7] = { N_("Sun"), N_("Mon"), N_("Tue"), N_("Wed"),
-                                         N_("Thu"), N_("Fri"), N_("Sat") };
-    const char* day = tr(days[lt.tm_wday % 7]);
-    if (s_clock12) {
-        /* 1:31 and a small PM after it, the pair centred */
-        snprintf(clock, sizeof(clock), "%d:%02d", lt.tm_hour % 12 ? lt.tm_hour % 12 : 12, lt.tm_min);
-        /* TRANSLATORS: after the time on the 12-hour clock, keep it short */
-        const char* ampm = lt.tm_hour < 12 ? tr("AM") : tr("PM");
-        const float cw = textWidth(clock, 26), aw = textWidth(ampm, 13);
-        const float cx = 320 - (cw + 4 + aw) * 0.5f;
-        text(cx, top + 7, clock, 26, p.text);
-        text(cx + cw + 4, top + 18, ampm, 13, p.textDim);
-        snprintf(date, sizeof(date), "%s %02d/%02d", day, lt.tm_mon + 1, lt.tm_mday);
-    } else {
-        strftime(clock, sizeof(clock), "%H:%M", &lt);
-        textCentered(320, top + 7, clock, 26, p.text);
-        snprintf(date, sizeof(date), "%s %02d/%02d", day, lt.tm_mday, lt.tm_mon + 1);
-    }
-    textCentered(320, top + 36, date, 13, p.textDim);
-
-    /* hints out to the screen edges (wide screens have room there), never
-     * under the clock: left hints that would reach it go to the right side */
-    const float x0 = screenLeft() + 40 < 30 ? screenLeft() + 40 : 30;
-    const float x1 = screenRight() - 40 > 612 ? screenRight() - 40 : 612;
-    const float clockL = 320 - 62, clockR = 320 + 62;
-    int fit = 0;
-    for (float w = x0; fit < nLeft && w + hintWidth(left[fit]) - 14 <= clockL; ++fit)
-        w += hintWidth(left[fit]);
-    float x = x0;
-    for (int i = 0; i < fit; ++i) x += hint(x, top + 15, left[i]);
-    float w = 0;
-    for (int i = fit; i < nLeft; ++i) w += hintWidth(left[i]);
-    for (int i = 0; right && i < nRight; ++i) w += hintWidth(right[i]);
-    x = x1 - w;
-    if (x < clockR) x = clockR;
-    for (int i = fit; i < nLeft; ++i) x += hint(x, top + 15, left[i]);
-    for (int i = 0; right && i < nRight; ++i) x += hint(x, top + 15, right[i]);
-}
-
-/* written by the music's thread, read by the footers: two lines, the one
- * shown flipped once the other is written */
+/* written by the music's thread (what plays: the footers said it, before
+ * WiiFlix took them out): two lines, the one shown flipped once the other
+ * is written */
 static char         s_nowPlaying[2][160];
 static volatile int s_nowPlayingAt = 0;
 void setNowPlaying(const std::string& line)
@@ -650,57 +623,7 @@ void setNowPlaying(const std::string& line)
     s_nowPlayingAt = w;
 }
 
-/* a quaver: what plays, in the footers */
-static void noteGlyph(float x, float y, u32 c)
-{
-    circle(x + 3.5f, y + 12, 3.5f, c);
-    roundRect(x + 5.5f, y + 1, 1.8f, 11, 0.9f, c);
-    triangle(x + 7.3f, y + 1, x + 11, y + 5, x + 7.3f, y + 5, c);
-}
-
-void footer(const Hint* left, int nLeft, const Hint* right, int nRight, const char* center)
-{
-    const Palette& p = pal();
-    const float top = 450;
-    const float L = screenLeft() - 20, W = screenWidth() + 40;
-    shadow(L, top - 1, W, 60, 16, 6.0f, p.shadow);
-    roundRect(L, top, W, 60, 16, p.barTop, p.barBottom);
-    roundBorder(L, top, W, 60, 16, 1.5f, p.barBorder);
-
-    float x = 20, xl = 20;
-    for (int i = 0; i < nLeft; ++i) x += hint(x, top + 5, left[i]);
-    xl = x;
-    float xr = 620;
-    if (right && nRight > 0) {
-        float w = 0;
-        for (int i = 0; i < nRight; ++i) w += hintWidth(right[i]);
-        x = xr = 626 - w;
-        for (int i = 0; i < nRight; ++i) x += hint(x, top + 5, right[i]);
-    }
-    const char* playing = s_nowPlaying[s_nowPlayingAt];
-    const bool music = (!center || !*center) && playing[0];
-    if (music) center = playing;
-    if (center && *center) {
-        /* centred caption, shortened to the room left between the hints */
-        float room = 2.0f * (320.0f - xl > xr - 320.0f ? xr - 320.0f : 320.0f - xl) - 16.0f;
-        char buf[160], out[164];
-        snprintf(buf, sizeof(buf), "%s", center);
-        snprintf(out, sizeof(out), "%s", buf);
-        size_t len = strlen(buf);
-        while (len > 0 && textWidth(out, 14) > room) {
-            do { --len; } while (len > 0 && ((unsigned char)buf[len] & 0xC0) == 0x80);
-            buf[len] = 0;
-            snprintf(out, sizeof(out), "%s...", buf);
-        }
-        if (len > 0 && music) {
-            const float w = textWidth(out, 14) + 16;
-            noteGlyph(320 - w / 2, top + 8, p.accent);
-            text(320 - w / 2 + 16, top + 7, out, 14, p.accent);
-        } else if (len > 0) {
-            textCentered(320, top + 7, out, 14, p.text);
-        }
-    }
-}
+void footer(const Hint*, int, const Hint*, int, const char*) {}
 
 static struct { float x[8], w[8], y, h; int n; u64 at; } s_tabBar;
 
@@ -818,15 +741,20 @@ void arrowHead(float cx, float cy, int dir, float w, float h, bool enabled, bool
     hot = hot && enabled;
     const float g = hot ? HOVER_GROW : 1.0f, s = (float)dir;
     const float hw = w * 0.5f * g, hh = h * 0.5f * g;
-    const float tipX = cx + s * hw, backX = cx - s * hw, notchX = cx - s * hw * 0.35f;
-    auto head = [&](float dy, float grow, u32 col) {
-        triangle(tipX + s * grow, cy + dy, backX - s * grow, cy - hh + dy - grow, notchX, cy + dy, col);
-        triangle(tipX + s * grow, cy + dy, notchX, cy + dy, backX - s * grow, cy + hh + dy + grow, col);
+    /* the old channels' arrowhead: a shallow notch, 18% of its length */
+    const float tipX = cx + s * hw, backX = cx - s * hw, notchX = backX + s * (2 * hw) * 0.18f;
+    /* its upper half, then its lower half (lit from above: a shade darker) */
+    auto head = [&](float dy, float grow, u32 upper, u32 lower) {
+        triangle(tipX + s * grow, cy + dy, backX - s * grow, cy - hh + dy - grow, notchX, cy + dy, upper);
+        triangle(tipX + s * grow, cy + dy, notchX, cy + dy, backX - s * grow, cy + hh + dy + grow, lower);
     };
     const float k = enabled ? 1.0f : 0.35f;
-    head(3, 0, alpha(p.shadow, k));                                           /* drop shadow */
-    head(0, 1.5f, alpha(hot ? HOVER_EDGE : p.cardBorder, k));                  /* outline     */
-    head(0, 0, alpha(hot ? HOVER_TOP : mix(p.cardTop, p.cardBottom, 0.5f), k));
+    const u32 sh = alpha(0x00000050, k);
+    head(3.5f, 0.5f, sh, sh);                                                   /* soft shadow below */
+    const u32 edge = alpha(hot ? HOVER_EDGE : p.cardBorder, k);
+    head(0, 1.2f, edge, edge);                                                  /* outline */
+    head(0, 0, alpha(hot ? HOVER_TOP : p.cardTop, k),
+               alpha(hot ? HOVER_BOTTOM : mix(p.cardBottom, p.cardBorder, 0.35f), k));
 }
 
 void backButton(float cx, float cy, float r, bool hover)

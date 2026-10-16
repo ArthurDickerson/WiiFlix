@@ -99,6 +99,10 @@ void background(bool withBand = true);
 float headerBand();
 /* Redraw that band on top of content that scrolled under it. */
 void drawHeaderBand();
+/* The logo the band shows at its left (set once at start-up), and where
+ * the band's own text may start after it */
+void  setLogo(GRRLIB_texImg* logo);
+float bandLeft();
 /* Card / channel tile.  focus 0..1 fades in the blue border and halo. */
 void card(float x, float y, float w, float h, float r, float focus);
 /* What the pointer is on (and the D-pad's choice): orange, a little bigger
@@ -157,7 +161,7 @@ void pageArrow(float cx, float cy, bool left, bool enabled, bool hover);
 void star(float cx, float cy, float r, float fill, u32 color, u32 empty);
 /* A rating out of 10 as five stars of radius r from x (halves rounded). */
 float stars(float x, float cy, float r, float rating10, u32 color, u32 empty);
-/* Silver arrowhead (a notch at its back) pointing left (dir -1) or right
+/* Silver arrowhead (a shallow notch at its back) pointing left (dir -1) or right
  * (+1), w x h around (cx, cy): the scrub bars' step buttons. */
 void arrowHead(float cx, float cy, int dir, float w, float h, bool enabled, bool hot);
 /* Round white "back" button with a circling arrow (detail page, player). */

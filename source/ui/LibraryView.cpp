@@ -129,7 +129,7 @@ const char* LibraryView::labelForType(const std::string& type) {
 }
 
 void LibraryView::drawLoadingFrame() {
-    Ui::background(false);
+    Ui::background();
     Ui::spinner(ringTex, 320, 240);
     SoundFX::tickLoading();
     // Flush to screen and block on vsync. This serves two purposes:
@@ -169,7 +169,8 @@ void LibraryView::freeDetail() {
     detailAudioSel = 0;
     detailSubSel   = -1;
     detailVersionSel = 0;
-    detailFocusRow = 0;
+    detailFocus = 0;
+    trackMenu = TRACK_MENU_NONE;
     detailIsEpisode = false;
 }
 
@@ -1154,7 +1155,6 @@ bool LibraryView::loadingState(State s) {
     case State::TVSuggestionsLoad: case State::TVUpcomingLoad:
     case State::MusicSuggestionsLoad: case State::PlaylistsLoad:
     case State::GlobalFavoritesLoad: case State::SearchLoad: case State::SpecialsLoad:
-    case State::ScenesLoad:
         return true;
     default:
         return false;
@@ -1168,7 +1168,7 @@ static unsigned mixKey(std::initializer_list<int> v) {
 }
 
 unsigned LibraryView::focusKey() const {
-    return mixKey({ libSel, itemSel, posterSel, detailAudioSel, detailSubSel, detailFocusRow,
+    return mixKey({ libSel, itemSel, posterSel, detailAudioSel, detailSubSel, detailFocus, trackMenu, trackMenuSel,
                     resumeSel, seasonSel, episodeSel, musicTrackSel, continueSel, nextUpSel,
                     actRow, movieSuggestRow, movieSuggestContSel, movieSuggestRecSel,
                     tvSuggestRow, tvSuggestContSel, tvSuggestRecSel, tvUpcomingSel,
@@ -1399,7 +1399,6 @@ bool LibraryView::updateState(ir_t& ir) {
         case State::GlobalFavoritesLoad:   loadGlobalFavorites();    return false;
         case State::SearchLoad:            performSearch();          return false;
         case State::SpecialsLoad:          loadSpecials();           return false;
-        case State::ScenesLoad:            loadScenes();             return false;
 
         // Screens
         case State::LibsReady:             return updateHome(ir, aPressed);
@@ -1408,7 +1407,6 @@ bool LibraryView::updateState(ir_t& ir) {
         case State::PostersReady:          return updatePosterGrid(ir, aPressed);
         case State::SeasonsReady:          return updateSeasons(ir, aPressed);
         case State::SpecialsReady:         return updateSpecials(ir, aPressed);
-        case State::ScenesReady:           return updateScenes(ir, aPressed);
         case State::PhotoReady:            return updatePhoto(ir, aPressed);
         case State::EpisodesReady:         return updateEpisodes(ir, aPressed);
         case State::MusicTracksReady:      return updateMusicTracks(ir, aPressed);
@@ -1453,7 +1451,7 @@ bool LibraryView::render(ir_t& ir) {
     // Loading screen (shown one frame before blocking load), after a grace
     if (loading && loadingWait()) return false;
     if (!loading) loadingSince = spinnerSince = 0;
-    Ui::background(!loading);
+    Ui::background();   /* the band and its logo, loading too */
     if (loading) {
         Ui::spinner(ringTex, 320, 240);
         drawCursor(ir);
@@ -1504,7 +1502,6 @@ bool LibraryView::render(ir_t& ir) {
     case State::PostersReady:           renderPosterGrid(ir); break;
     case State::SeasonsReady:           renderSeasons(ir); break;
     case State::SpecialsReady:          renderSpecials(ir); break;
-    case State::ScenesReady:            renderScenes(ir); break;
     case State::PhotoReady:             renderPhoto(ir); break;
     case State::EpisodesReady:          renderEpisodes(ir); break;
     case State::MusicTracksReady:       renderMusicTracks(ir); break;

@@ -11,11 +11,6 @@
 #include <unistd.h>
 #include <ogc/lwp_watchdog.h>
 
-/* The WiiFlix logo (data/images/logo_wiifin.png), on the red band */
-extern unsigned char data_logo_wiifin_png[];
-static GRRLIB_texImg* s_logo = nullptr;
-static int            s_logoUsers = 0;
-
 /* Defined in LibraryView.cpp: decodes a JPEG into an RGBA8 texture. */
 GRRLIB_texImg* loadJPEGTexture(const u8* data, u32 size);
 
@@ -27,10 +22,10 @@ static const float BIG_W     = 140.0f, BIG_H   = 210.0f;   /* selected, 2:3 */
 static const float SMALL_W   =  96.0f, SMALL_H = 144.0f;   /* the others    */
 static const float GAP       = 14.0f;
 static const float RADIUS    = 6.0f;
+static const float LINE_SIDE = 24.0f;   /* the line's margin at the screen edges */
 
-/* the logo on the red band (Ui::headerBand), then the row's name in a
+/* under the red band (Ui::headerBand, the logo on it): the row's name in a
  * long bar under it, the Up/Down pill beside it */
-static const float WORD_X    = 18.0f, WORD_H = 36.0f;
 static const float BAR_Y     = 54.0f, BAR_H = 30.0f;
 static const float BAR_SIDE  = 20.0f;    /* from the screen edges            */
 static const float SWITCH_W  = 76.0f;    /* the ▼▲ pill                      */
@@ -39,10 +34,9 @@ static const float SWITCH_GAP = 10.0f;
 static const float SCRUB_Y   = 336.0f;   /* centre line of the scrub bar     */
 static const float KNOB_R    = 11.0f;
 static const float ARROW_X   = 38.0f;    /* arrow centres, from the edges    */
-static const float ARROW_W   = 26.0f, ARROW_H = 36.0f;
+static const float ARROW_W   = 36.0f, ARROW_H = 28.0f;   /* the old channels' arrowheads */
 static const float TITLE_Y   = 360.0f;   /* selected title, under the bar    */
 static const float META_Y    = 390.0f;   /* its details, stars, rating, n/N  */
-static const float HINTS_Y   = 454.0f;
 
 /* Covers kept in memory around a row's selection (each side) */
 static const int   WIN_CURRENT  = 9;
@@ -81,7 +75,6 @@ CoverLine::CoverLine(JellyfinClient& c, const std::string& url, const JellyfinAu
     : client(c), serverUrl(url), auth(a)
 {
     LWP_MutexInit(&lock, false);
-    if (s_logoUsers++ == 0) s_logo = GRRLIB_LoadTexture(data_logo_wiifin_png);
 }
 
 CoverLine::~CoverLine()
@@ -89,7 +82,6 @@ CoverLine::~CoverLine()
     stopLoader();
     for (auto& r : rows) freeTextures(r);
     if (lock != LWP_MUTEX_NULL) LWP_MutexDestroy(lock);
-    if (--s_logoUsers == 0 && s_logo) { GRRLIB_FreeTexture(s_logo); s_logo = nullptr; }
 }
 
 void CoverLine::freeTextures(Row& r)
@@ -176,7 +168,13 @@ void CoverLine::build(const std::vector<JellyfinLibrary>& libs)
     if (rows[rowSel].state == ROW_READY) {
         Row& r = rows[rowSel];
         for (int i = 0; i < (int)r.items.size(); ++i)
-            if (r.items[i].id == keepItem) { r.sel = i; r.scroll = (float)i; break; }
+            if (r.items[i].id == keepItem) {
+                r.sel = i;
+                keepVisible(r);
+                r.scroll = (float)r.first;
+                r.fpos   = (float)i;
+                break;
+            }
         pendingSelectId.clear();
     }
     rowFade  = 1.0f;
@@ -231,7 +229,9 @@ void CoverLine::fetchRow(int r)
             if (row.items[i].id == pendingSelectId) { row.sel = i; break; }
         pendingSelectId.clear();
     }
-    row.scroll = (float)row.sel;
+    keepVisible(row);
+    row.scroll = (float)row.first;
+    row.fpos   = (float)row.sel;
     row.state  = ok ? ROW_READY : ROW_FAILED;
     LWP_MutexUnlock(lock);
     SYS_Report("[CoverLine] %s \"%s\": %d titles\n", queue ? "queue" : "genre",
@@ -259,6 +259,7 @@ unsigned CoverLine::focusKey() const
 {
     unsigned k = (unsigned)(rowSel + 1) * 7919u;
     if (rowSel >= 0 && rowSel < (int)rows.size()) k += (unsigned)rows[rowSel].sel * 2654435761u;
+    if (menuOpen) k += (unsigned)(menuSel + 1) * 104729u + (unsigned)menuPage * 31u;
     return k;
 }
 
@@ -398,27 +399,232 @@ float CoverLine::trackRight() const { return arrowX(+1) - ARROW_W * 0.5f - 22.0f
 float CoverLine::knobX(const Row& row) const
 {
     int n = (int)row.items.size();
-    float frac = n > 1 ? row.scroll / (float)(n - 1) : 0.0f;
+    float frac = n > 1 ? row.fpos / (float)(n - 1) : 0.0f;
     if (frac < 0) frac = 0;
     if (frac > 1) frac = 1;
     return trackLeft() + frac * (trackRight() - trackLeft());
 }
 
-/* Cover i of the row at the row's current (animated) scroll position: the
- * one at the scroll position is big, the others small; sizes blend in
- * between so the line glides from one cover to the next. */
+int CoverLine::visibleCount() const
+{
+    const float room = Ui::screenWidth() - 2 * LINE_SIDE - (BIG_W - SMALL_W) + GAP;
+    const int v = (int)(room / (SMALL_W + GAP));
+    return v < 1 ? 1 : v;
+}
+
+void CoverLine::keepVisible(Row& r) const
+{
+    const int n = (int)r.items.size(), v = visibleCount();
+    if (r.sel < r.first)         r.first = r.sel;
+    if (r.sel > r.first + v - 1) r.first = r.sel - v + 1;
+    const int last = n - v > 0 ? n - v : 0;   /* the line stays full at its end */
+    if (r.first > last) r.first = last;
+    if (r.first < 0)    r.first = 0;
+}
+
+/* Cover i at the row's current (animated) place: left to right from the
+ * first one shown, all small but the one in focus, which grows in place;
+ * those after it move right to make room.  fpos between two covers blends
+ * their sizes, so the line glides from one to the next. */
 void CoverLine::coverRect(const Row& row, int i, float& x, float& y, float& w, float& h) const
 {
-    float d  = (float)i - row.scroll;
-    float ad = fabsf(d);
-    float k  = ad < 1.0f ? 1.0f - ad : 0.0f;            /* 1 at the centre */
+    const float ad = fabsf((float)i - row.fpos);
+    const float k  = ad < 1.0f ? 1.0f - ad : 0.0f;          /* 1: in focus */
+    float pushed = (float)i - row.fpos;                     /* the grown one's room, left of it */
+    if (pushed < 0) pushed = 0;
+    if (pushed > 1) pushed = 1;
     w = SMALL_W + (BIG_W - SMALL_W) * k;
     h = SMALL_H + (BIG_H - SMALL_H) * k;
-    const float first = BIG_W * 0.5f + GAP + SMALL_W * 0.5f;   /* centre to the next centre */
-    float off = ad <= 1.0f ? ad * first : first + (ad - 1.0f) * (SMALL_W + GAP);
-    float cx  = CENTER_X + (d < 0 ? -off : off);
-    x = cx - w * 0.5f;
+    x = Ui::screenLeft() + LINE_SIDE + ((float)i - row.scroll) * (SMALL_W + GAP) + (BIG_W - SMALL_W) * pushed;
     y = CENTER_Y - h * 0.5f;
+}
+
+/* A rounded bar of the top row: card colours, a soft shadow. */
+static void pill(float x, float y, float w, float h, bool hot)
+{
+    const Ui::Palette& p = Ui::pal();
+    Ui::shadow(x, y + 2, w, h, h * 0.5f, 5.0f, p.shadow);
+    Ui::roundRect(x, y, w, h, h * 0.5f, p.cardTop, p.cardBottom);
+    Ui::roundBorder(x, y, w, h, h * 0.5f, hot ? 2.0f : 1.0f, hot ? p.accent : p.cardBorder);
+}
+
+/* ---- The list of rows (A on the row's name, or -) --------------------- */
+
+/* a big panel over the line: the row shown named at its top (on every
+ * page), the rows' names under it, MENU_ROWS a page (the one shown greyed:
+ * it can't be picked), the page pill at the bottom (◀ 2/3 ▶), a ✕ at the
+ * top right */
+static const int   MENU_ROWS  = 8;
+static const float MENU_Y     = 50, MENU_H = 420;
+static const float HEAD_Y     = MENU_Y + 10;      /* the row shown, its line */
+static const float MENU_ROW0  = 98, MENU_STEP = 37, MENU_ROW_H = 31;
+static const float PAGE_W     = 200, PAGE_H = 34, PAGE_Y = MENU_Y + MENU_H - 48;
+static float menuX() { return Ui::screenLeft() + 36; }
+static float menuW() { return Ui::screenWidth() - 72; }
+static float closeCx() { return menuX() + menuW() - 30; }
+static const float CLOSE_CY = MENU_Y + 26;
+
+/* A stroke of thickness t from (x0, y0) to (x1, y1). */
+static void stroke(float x0, float y0, float x1, float y1, float t, u32 c)
+{
+    const float dx = x1 - x0, dy = y1 - y0, l = sqrtf(dx * dx + dy * dy);
+    const float nx = -dy / l * t * 0.5f, ny = dx / l * t * 0.5f;
+    Ui::triangle(x0 + nx, y0 + ny, x1 + nx, y1 + ny, x1 - nx, y1 - ny, c);
+    Ui::triangle(x0 + nx, y0 + ny, x1 - nx, y1 - ny, x0 - nx, y0 - ny, c);
+}
+
+int CoverLine::menuPages() const
+{
+    const int n = (int)rows.size();
+    return n > 0 ? (n + MENU_ROWS - 1) / MENU_ROWS : 1;
+}
+
+void CoverLine::openMenu()
+{
+    menuOpen = true;
+    menuSel  = rowSel + 1 < (int)rows.size() ? rowSel + 1 : rowSel - 1;
+    if (menuSel < 0) menuSel = 0;
+    menuPage = rowSel / MENU_ROWS;
+    dragging = false;
+    repeatDir = 0;
+}
+
+/* to row `to` from the list (the line slides in from its side) */
+void CoverLine::jumpRow(int to)
+{
+    if (to < 0 || to >= (int)rows.size() || to == rowSel) return;
+    rowDir  = to > rowSel ? 1 : -1;
+    rowSel  = to;
+    rowFade = 0.0f;
+}
+
+CoverLine::Action CoverLine::updateMenu(const ir_t& ir)
+{
+    const int n = (int)rows.size(), pages = menuPages();
+    menuHover = -1; menuArrow = 0; menuClose = false;
+    menuPtr = ir.valid;
+    if (ir.valid) {
+        const float px = ir.x, py = ir.y;
+        for (int i = 0; i < MENU_ROWS; ++i) {
+            const int idx = menuPage * MENU_ROWS + i;
+            if (idx >= n) break;
+            const float ry = MENU_ROW0 + i * MENU_STEP;
+            if (idx != rowSel && px >= menuX() + 10 && px < menuX() + menuW() - 10 &&
+                py >= ry && py < ry + MENU_ROW_H)
+                menuHover = idx;
+        }
+        if (fabsf(py - (PAGE_Y + PAGE_H * 0.5f)) < PAGE_H * 0.5f + 4) {
+            if (fabsf(px - (320 - PAGE_W * 0.5f + 24)) < 24 && menuPage > 0)          menuArrow = -1;
+            if (fabsf(px - (320 + PAGE_W * 0.5f - 24)) < 24 && menuPage + 1 < pages)  menuArrow = +1;
+        }
+        const float dx = px - closeCx(), dy = py - CLOSE_CY;
+        menuClose = dx * dx + dy * dy < 20 * 20;
+    }
+    if (menuHover >= 0) menuSel = menuHover;
+
+    /* the D-pad: a row at a time, a page with Left / Right */
+    auto stepSel = [&](int d) {
+        int to = menuSel + d;
+        if (to == rowSel) to += d;               /* the row shown: over it */
+        if (to >= 0 && to < n) menuSel = to;
+        menuPtr = false;
+    };
+    if (Input::isUpPressed())   stepSel(-1);
+    if (Input::isDownPressed()) stepSel(+1);
+    auto turn = [&](int d) {
+        const int to = menuPage + d;
+        if (to < 0 || to >= pages) return;
+        menuPage = to;
+        menuSel  = to * MENU_ROWS;
+        if (menuSel == rowSel) menuSel = menuSel + 1 < n ? menuSel + 1 : menuSel - 1;
+    };
+    if (Input::isLeftPressed())  { turn(-1); menuPtr = false; }
+    if (Input::isRightPressed()) { turn(+1); menuPtr = false; }
+    if (!menuPtr) menuPage = menuSel / MENU_ROWS;
+
+    if (Input::isBackPressed() || Input::isLPressed()) { menuOpen = false; return Action::None; }
+    if (Input::isAJustPressed()) {
+        if (ir.valid) {
+            if (menuClose)          menuOpen = false;
+            else if (menuArrow)     turn(menuArrow);
+            else if (menuHover >= 0) { jumpRow(menuHover); menuOpen = false; }
+        } else if (menuSel != rowSel) {
+            jumpRow(menuSel);
+            menuOpen = false;
+        }
+    }
+    return Action::None;
+}
+
+void CoverLine::drawMenu()
+{
+    const Ui::Palette& p = Ui::pal();
+    const int n = (int)rows.size(), pages = menuPages();
+    const float px = menuX(), pw = menuW();
+
+    Ui::roundRect(Ui::screenLeft(), 0, Ui::screenWidth(), 480, 0, 0x00000070, 0x00000070);
+    Ui::shadow(px, MENU_Y + 4, pw, MENU_H, 18, 12.0f, 0x00000070);
+    Ui::roundRect(px, MENU_Y, pw, MENU_H, 18, p.cardTop, p.cardBottom);
+    Ui::roundBorder(px, MENU_Y, pw, MENU_H, 18, 1.5f, p.cardBorder);
+
+    /* the row shown, at the top on every page, after a black dot */
+    {
+        const float cy = HEAD_Y + MENU_ROW_H * 0.5f;
+        Ui::circle(px + 30, cy, 6.5f, p.text);
+        std::string name = fit(rows[rowSel].title, 18, (int)(closeCx() - px - 90));
+        Ui::text(px + 46, cy - 11, name.c_str(), 18, p.text);
+        Ui::text(px + 47, cy - 11, name.c_str(), 18, p.text);   /* bolder */
+        Ui::roundRect(px + 16, MENU_ROW0 - 8, pw - 32, 1.5f, 0.75f, Ui::alpha(p.cardBorder, 0.7f));
+    }
+
+    /* the rows' names: the row shown greyed after a grey dot (it can't be
+     * picked); the one chosen (under the pointer, or the D-pad's) in an
+     * orange pill, kept inside the panel */
+    for (int i = 0; i < MENU_ROWS; ++i) {
+        const int idx = menuPage * MENU_ROWS + i;
+        if (idx >= n) break;
+        float rx = px + 12, ry = MENU_ROW0 + i * MENU_STEP, rw = pw - 24, rh = MENU_ROW_H;
+        const float cy = ry + rh * 0.5f;
+        std::string name = fit(rows[idx].title, 18, (int)pw - 80);
+        if (idx == rowSel) {
+            const u32 grey = Ui::alpha(p.textDim, 0.55f);
+            Ui::circle(px + 30, cy, 6.5f, grey);
+            Ui::text(px + 46, cy - 11, name.c_str(), 18, grey);
+            continue;
+        }
+        const bool on = menuPtr ? idx == menuHover : idx == menuSel;
+        if (on) {
+            ry -= 1.5f; rh += 3.0f;   /* a little taller, never wider than the panel */
+            Ui::shadow(rx, ry + 1, rw, rh + 2, rh * 0.5f, 6.0f, 0xF7922E60);
+            Ui::roundRect(rx, ry, rw, rh, rh * 0.5f, Ui::HOVER_TOP, Ui::HOVER_BOTTOM);
+            Ui::roundBorder(rx, ry, rw, rh, rh * 0.5f, 1.5f, Ui::HOVER_EDGE);
+        }
+        Ui::text(px + 46, cy - 11, name.c_str(), 18, on ? 0xFFFFFFFF : p.text);
+    }
+
+    /* ✕ */
+    {
+        const float g = menuClose ? Ui::HOVER_GROW : 1.0f, a = 8 * g, cx = closeCx();
+        const u32 c = menuClose ? Ui::HOVER_TOP : p.text;
+        stroke(cx - a, CLOSE_CY - a, cx + a, CLOSE_CY + a, 3.2f * g, c);
+        stroke(cx + a, CLOSE_CY - a, cx - a, CLOSE_CY + a, 3.2f * g, c);
+    }
+
+    /* the page pill: ◀ 2/3 ▶ */
+    {
+        const float x = 320 - PAGE_W * 0.5f, y = PAGE_Y, cy = y + PAGE_H * 0.5f;
+        pill(x, y, PAGE_W, PAGE_H, false);
+        char pg[24];
+        snprintf(pg, sizeof(pg), "%d/%d", menuPage + 1, pages);
+        Ui::textCentered(320, cy - 9, pg, 17, p.text);
+        for (int d = -1; d <= 1; d += 2) {
+            const bool can = d < 0 ? menuPage > 0 : menuPage + 1 < pages;
+            const bool hot = menuArrow == d;
+            const float g = hot ? 1.25f : 1.0f, ax = 320 + d * (PAGE_W * 0.5f - 24);
+            const u32 c = !can ? Ui::alpha(p.textDim, 0.35f) : hot ? Ui::HOVER_TOP : p.text;
+            Ui::triangle(ax + d * 8 * g, cy, ax - d * 6 * g, cy - 9 * g, ax - d * 6 * g, cy + 9 * g, c);
+        }
+    }
 }
 
 /* ---- Input -------------------------------------------------------------- */
@@ -441,6 +647,7 @@ void CoverLine::step(Row& row, int delta)
     if (s < 0) s = 0;
     if (s > n - 1) s = n - 1;
     row.sel = s < 0 ? 0 : s;
+    keepVisible(row);
 }
 
 void CoverLine::setFromTrack(Row& row, float x)
@@ -451,12 +658,15 @@ void CoverLine::setFromTrack(Row& row, float x)
     if (frac < 0) frac = 0;
     if (frac > 1) frac = 1;
     row.sel = (int)(frac * (n - 1) + 0.5f);
+    keepVisible(row);
 }
 
 CoverLine::Action CoverLine::update(const ir_t& ir, bool& irMode)
 {
     if (rows.empty()) return Action::None;
     evictFar();
+    if (menuOpen) return updateMenu(ir);
+    if (Input::isLPressed()) { openMenu(); return Action::None; }
 
     const bool up    = Input::isUpPressed(),   down  = Input::isDownPressed();
     const bool left  = Input::isLeftPressed(), right = Input::isRightPressed();
@@ -476,28 +686,28 @@ CoverLine::Action CoverLine::update(const ir_t& ir, bool& irMode)
     const int n = ready ? (int)row.items.size() : 0;
 
     /* ---- Pointer: what is under it ---- */
-    hoverCover = -1; hoverArrow = 0; hoverRowBtn = 0; hoverKnob = false; hoverTrack = false;
+    hoverCover = -1; hoverArrow = 0; hoverRowBtn = 0; hoverKnob = false; hoverTrack = false; hoverLabel = false;
     const bool ptr = ir.valid && irMode;
     if (ptr) {
         const float px = ir.x, py = ir.y;
+        /* the row's name: A opens the list of rows */
+        const float sx = switchX(), lx = Ui::screenLeft() + BAR_SIDE;
+        if (py >= BAR_Y - 2 && py < BAR_Y + BAR_H + 2 && px >= lx && px < sx - SWITCH_GAP) hoverLabel = true;
         /* the ▼▲ pill: ▼ the next row, ▲ the one before */
-        const float sx = switchX();
         if (py >= BAR_Y - 2 && py < BAR_Y + BAR_H + 2 && px >= sx - 2 && px < sx + SWITCH_W + 2) {
             if (px < sx + SWITCH_W * 0.5f) { if (rowSel + 1 < (int)rows.size()) hoverRowBtn = +1; }
             else if (rowSel > 0)                                                  hoverRowBtn = -1;
         }
         if (n > 0) {
-            /* covers: the one nearest the middle wins where they overlap */
-            float best = 1e9f;
-            int lo = (int)floorf(row.scroll) - 8, hi = (int)ceilf(row.scroll) + 8;
+            /* covers: the one under the pointer is in focus, it grows (the
+             * ones after it move away from the pointer: no flicker) */
+            const int lo = (int)floorf(row.scroll) - 1, hi = lo + visibleCount() + 3;
             for (int i = lo < 0 ? 0 : lo; i <= hi && i < n; ++i) {
                 float x, y, w, h;
                 coverRect(row, i, x, y, w, h);
-                if (px >= x && px < x + w && py >= y && py < y + h) {
-                    float d = fabsf((float)i - row.scroll);
-                    if (d < best) { best = d; hoverCover = i; }
-                }
+                if (px >= x && px < x + w && py >= y && py < y + h) hoverCover = i;
             }
+            if (hoverCover >= 0 && !dragging) row.sel = hoverCover;
             /* scrub bar */
             if (fabsf(py - SCRUB_Y) < ARROW_H * 0.5f + 4) {
                 if (fabsf(px - arrowX(-1)) < ARROW_W * 0.5f + 8)      hoverArrow = -1;
@@ -528,6 +738,7 @@ CoverLine::Action CoverLine::update(const ir_t& ir, bool& irMode)
     }
 
     /* ---- A ---- */
+    if (aDown && ptr && hoverLabel) { openMenu(); return Action::None; }
     if (aDown) {
         if (!ready) {
             /* a row that failed to load: A tries again */
@@ -544,11 +755,7 @@ CoverLine::Action CoverLine::update(const ir_t& ir, bool& irMode)
             if (hoverArrow)    { step(row, hoverArrow); repeatDir = hoverArrow; repeatNext = nowMs() + 400; return Action::None; }
             if (hoverKnob)     { dragging = true; dragGrab = ir.x - knobX(row); dragX = knobX(row); return Action::None; }
             if (hoverTrack)    { dragging = true; dragGrab = 0; dragX = ir.x; setFromTrack(row, ir.x); return Action::None; }
-            if (hoverCover >= 0) {
-                if (hoverCover == row.sel && fabsf(row.scroll - row.sel) < 0.3f) return Action::Open;
-                row.sel = hoverCover;
-                return Action::None;
-            }
+            if (hoverCover >= 0) { row.sel = hoverCover; return Action::Open; }
         } else if (n > 0) {
             return Action::Open;
         }
@@ -558,23 +765,16 @@ CoverLine::Action CoverLine::update(const ir_t& ir, bool& irMode)
     rowFade = Ui::approach(rowFade, 1.0f, 0.2f);
     if (ready) {
         /* a long jump (dragging, a click on the track) glides fast */
-        float dist = fabsf(row.scroll - (float)row.sel);
-        float speed = dragging ? 0.55f : dist > 6.0f ? 0.4f : 0.25f;
-        row.scroll = Ui::approach(row.scroll, (float)row.sel, speed);
+        const bool  far = fabsf(row.fpos - (float)row.sel) > 6.0f || fabsf(row.scroll - (float)row.first) > 6.0f;
+        const float speed = dragging ? 0.55f : far ? 0.4f : 0.3f;
+        row.fpos   = Ui::approach(row.fpos,   (float)row.sel,   speed);
+        row.scroll = Ui::approach(row.scroll, (float)row.first, speed);
     }
     return Action::None;
 }
 
 /* ---- Drawing ------------------------------------------------------------ */
 
-/* A rounded bar of the top row: card colours, a soft shadow. */
-static void pill(float x, float y, float w, float h, bool hot)
-{
-    const Ui::Palette& p = Ui::pal();
-    Ui::shadow(x, y + 2, w, h, h * 0.5f, 5.0f, p.shadow);
-    Ui::roundRect(x, y, w, h, h * 0.5f, p.cardTop, p.cardBottom);
-    Ui::roundBorder(x, y, w, h, h * 0.5f, hot ? 2.0f : 1.0f, hot ? p.accent : p.cardBorder);
-}
 
 /* Solid down (dir +1) or up (-1) triangle, wide and flat. */
 static void updown(float cx, float cy, int dir, float g, u32 col)
@@ -583,14 +783,6 @@ static void updown(float cx, float cy, int dir, float g, u32 col)
     Ui::triangle(cx - 10 * g, cy - s * 5 * g, cx + 10 * g, cy - s * 5 * g, cx, cy + s * 6 * g, col);
 }
 
-/* The logo on the red band, top left */
-static void wordmark()
-{
-    if (!s_logo) return;
-    const float h = WORD_H, w = h * s_logo->w / s_logo->h * WiiUtils::wsScaleX();
-    GRRLIB_DrawImg(Ui::screenLeft() + WORD_X, (Ui::headerBand() - h) * 0.5f, s_logo, 0,
-                   w / s_logo->w, h / s_logo->h, 0xFFFFFFFF);
-}
 
 void CoverLine::drawTop()
 {
@@ -600,10 +792,22 @@ void CoverLine::drawTop()
     /* the row's name, after a dot, in a bar as long as the screen allows */
     const float bx = Ui::screenLeft() + BAR_SIDE, sx = switchX();
     const float bw = sx - SWITCH_GAP - bx, cy = BAR_Y + BAR_H * 0.5f;
-    pill(bx, BAR_Y, bw, BAR_H, false);
-    Ui::circle(bx + 18, cy, 6.5f, p.text);
+    {
+        /* a button: A opens the list of rows */
+        float lx = bx, ly = BAR_Y, lw = bw, lh = BAR_H;
+        if (hoverLabel) {
+            Ui::grow(lx, ly, lw, lh, 1.02f);   /* a long bar: a little */
+            Ui::shadow(lx - 2, ly, lw + 4, lh + 3, lh * 0.5f + 2, 8.0f, 0xF7922E80);
+            Ui::roundRect(lx, ly, lw, lh, lh * 0.5f, Ui::HOVER_TOP, Ui::HOVER_BOTTOM);
+            Ui::roundBorder(lx, ly, lw, lh, lh * 0.5f, 1.5f, Ui::HOVER_EDGE);
+        } else {
+            pill(lx, ly, lw, lh, false);
+        }
+    }
+    const u32 ink = hoverLabel ? 0xFFFFFFFF : p.text;
+    Ui::circle(bx + 18, cy, 6.5f, ink);
     std::string name = fit(row.title, 18, (int)bw - 48);
-    Ui::text(bx + 32, BAR_Y + 5, name.c_str(), 18, p.text);
+    Ui::text(bx + 32, BAR_Y + 5, name.c_str(), 18, ink);
 
     /* ▼ next row, ▲ the one before: dimmed at the ends; under the pointer
      * the pill grows and turns orange, like every button */
@@ -630,43 +834,30 @@ void CoverLine::drawCovers(Row& row)
     const int n = (int)row.items.size();
     const float fade = rowFade;
     const float dy   = (1.0f - fade) * 24.0f * (float)rowDir;   /* slides in from Up/Down */
-    const bool  ptr  = hoverCover >= 0;
-
-    /* how many covers fit on each side */
-    int side = (int)((Ui::screenWidth() * 0.5f - BIG_W * 0.5f) / (SMALL_W + GAP)) + 2;
-    int c = (int)floorf(row.scroll + 0.5f);
 
     /* floor shadow under the line */
     Ui::shadow(Ui::screenLeft() + 30, CENTER_Y + BIG_H * 0.5f - 6 + dy, Ui::screenWidth() - 60, 12, 6,
                14.0f, Ui::alpha(p.shadow, 0.5f * fade));
 
-    /* farthest first, so the middle cover is drawn over its neighbours */
-    for (int d = side; d >= 0; --d) {
-        for (int s = 0; s < 2; ++s) {
-            if (d == 0 && s == 1) continue;
-            int i = s == 0 ? c - d : c + d;
-            if (i < 0 || i >= n) continue;
+    /* the covers on screen: the small ones, then the one in focus (and the
+     * one it is gliding from) over them */
+    const int lo0 = (int)floorf(row.scroll) - 1, hi = lo0 + visibleCount() + 3;
+    const int lo = lo0 < 0 ? 0 : lo0, f0 = (int)floorf(row.fpos);
+    for (int pass = 0; pass < 2; ++pass) {
+        for (int i = lo; i <= hi && i < n; ++i) {
+            if ((i == f0 || i == f0 + 1) != (pass == 1)) continue;
             float x, y, w, h;
             coverRect(row, i, x, y, w, h);
             if (x > Ui::screenRight() || x + w < Ui::screenLeft()) continue;
             y += dy;
 
-            float dist = fabsf((float)i - row.scroll);
-            float k    = dist < 1.0f ? 1.0f - dist : 0.0f;          /* 1 in the middle */
-            bool  sel  = i == row.sel;
-            bool  hov  = ptr && i == hoverCover && !sel;
-            /* side covers a little darker, fading towards the edges */
-            float bright = 0.62f + 0.38f * k;
-            if (hov) bright = 0.9f;
-            float edge = 1.0f - (dist - 2.5f) / (float)side;          /* fade out near the edges */
-            if (edge > 1) edge = 1;
-            if (edge < 0) edge = 0;
-            float a = fade * edge;
-            if (a <= 0.01f) continue;
+            const float ad = fabsf((float)i - row.fpos), k = ad < 1.0f ? 1.0f - ad : 0.0f;
+            /* the others a touch darker than the one in focus */
+            const float bright = 0.86f + 0.14f * k, a = fade;
             u8  lv   = (u8)(255 * bright);
             u32 tint = ((u32)lv << 24) | ((u32)lv << 16) | ((u32)lv << 8) | (u32)(255 * a);
 
-            Ui::shadow(x + 2, y + 4, w - 4, h - 2, RADIUS, 6.0f, Ui::alpha(p.shadow, a));
+            Ui::shadow(x + 2, y + 4, w - 4, h - 2, RADIUS, 6.0f + 4.0f * k, Ui::alpha(p.shadow, a));
 
             LWP_MutexLock(lock);
             GRRLIB_texImg* tex = row.tex[i];
@@ -686,8 +877,8 @@ void CoverLine::drawCovers(Row& row)
                 Ui::progress(x + 6, y + h - 10, w - 12, 4,
                              (float)it.playbackPositionTicks / (float)it.runtimeTicks);
 
-            /* a thin frame, the same on the selection (no colour) */
-            Ui::roundBorder(x, y, w, h, RADIUS, 1.0f, Ui::alpha(p.cardBorder, a * (hov ? 1.0f : 0.6f)));
+            /* a thin frame, the same on the one in focus (no colour) */
+            Ui::roundBorder(x, y, w, h, RADIUS, 1.0f, Ui::alpha(p.cardBorder, a * (0.6f + 0.4f * k)));
         }
     }
 }
@@ -696,8 +887,8 @@ void CoverLine::drawInfo(const Row& row)
 {
     const Ui::Palette& p = Ui::pal();
     if (row.sel < 0 || row.sel >= (int)row.items.size()) return;
-    /* only once the line has settled on it */
-    float settle = 1.0f - fabsf(row.scroll - row.sel) * 2.0f;
+    /* only once the line has settled on it (fpos) */
+    float settle = 1.0f - fabsf(row.fpos - row.sel) * 2.0f;
     if (settle <= 0.02f) return;
     float a = settle * rowFade;
     const JellyfinItem& it = row.items[row.sel];
@@ -796,11 +987,15 @@ void CoverLine::drawScrubBar(const Row& row)
 
     /* white knob */
     bool hot = hoverKnob || dragging;
-    float r = hot ? KNOB_R + 2 : KNOB_R;
-    if (hot) Ui::circle(kx, SCRUB_Y, r + 6, Ui::alpha(p.glow, 0.6f));
+    float r = hot ? KNOB_R * Ui::HOVER_GROW : KNOB_R;
     Ui::shadow(kx - r, SCRUB_Y - r + 2, r * 2, r * 2, r, 4.0f, p.shadow);
-    Ui::circle(kx, SCRUB_Y, r, 0xFFFFFFFF);
-    Ui::roundBorder(kx - r, SCRUB_Y - r, r * 2, r * 2, r, 1.5f, hot ? p.accent : 0xA0A6B0FF);
+    if (hot) {   /* orange and a little bigger, like every button */
+        Ui::roundRect(kx - r, SCRUB_Y - r, r * 2, r * 2, r, Ui::HOVER_TOP, Ui::HOVER_BOTTOM);
+        Ui::roundBorder(kx - r, SCRUB_Y - r, r * 2, r * 2, r, 1.5f, Ui::HOVER_EDGE);
+    } else {
+        Ui::circle(kx, SCRUB_Y, r, 0xFFFFFFFF);
+        Ui::roundBorder(kx - r, SCRUB_Y - r, r * 2, r * 2, r, 1.5f, 0xA0A6B0FF);
+    }
 
     /* while dragging: the title the knob is on, in a bubble above it */
     if (dragging && row.sel >= 0 && row.sel < n) {
@@ -811,32 +1006,20 @@ void CoverLine::drawScrubBar(const Row& row)
         if (bx + w > Ui::screenRight() - 8) bx = Ui::screenRight() - 8 - w;
         Ui::shadow(bx, by + 2, w, h, 8, 5.0f, p.shadow);
         Ui::roundRect(bx, by, w, h, 8, p.cardTop, p.cardBottom);
-        Ui::roundBorder(bx, by, w, h, 8, 1.5f, p.accent);
+        Ui::roundBorder(bx, by, w, h, 8, 1.5f, Ui::HOVER_EDGE);
         Ui::triangle(kx - 6, by + h - 1, kx + 6, by + h - 1, kx, by + h + 6, p.cardBottom);
         Ui::text(bx + 10, by + 4, s.c_str(), 14, p.text);
     }
-}
-
-void CoverLine::drawHints()
-{
-    const Ui::Hint h[] = { { "A", N_("Open") }, { "1", N_("Search") }, { "+!", N_("Browse") }, { "2", N_("Profiles") } };
-    const int nh = 4;
-    float w = 0;
-    for (int i = 0; i < nh; ++i) w += Ui::hintWidth(h[i]);
-    float x = CENTER_X - w * 0.5f;
-    for (int i = 0; i < nh; ++i) x += Ui::hint(x, HINTS_Y, h[i]);
 }
 
 void CoverLine::render(const ir_t& ir)
 {
     (void)ir;
     const Ui::Palette& p = Ui::pal();
-    Ui::background();                 /* with the red band */
-    wordmark();
+    Ui::background();                 /* the red band, the logo on it */
 
     if (rows.empty()) {
         Ui::textCentered(CENTER_X, 200, tr("Nothing to show yet"), 20, p.text);
-        drawHints();
         return;
     }
 
@@ -870,5 +1053,5 @@ void CoverLine::render(const ir_t& ir)
         Ui::textCentered(CENTER_X, CENTER_Y + 24, tr("Loading..."), 14, p.textDim);
     }
 
-    drawHints();
+    if (menuOpen) drawMenu();   /* the list of rows, over everything */
 }

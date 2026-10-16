@@ -815,7 +815,7 @@ void drawScreen(bool live, bool loading)
     bool playing = live && !g_mplayer_paused;
     float idle = s.idleK, idleE = idle * idle * (3 - 2 * idle);
 
-    Ui::background(false);
+    Ui::background();   /* the red band, the logo on it */
 
     /* ---- normal layout (fades out when idle) ---- */
     if (idleE < 0.99f) {
@@ -823,13 +823,13 @@ void drawScreen(bool live, bool loading)
         float pulse = 1 + fminf(s.beat, 0.3f) * 0.10f, sz = ART * pulse, off = (sz - ART) / 2;
         drawCover(ART_X - off, ART_Y - off, sz, a);
 
-        Ui::text(48, 22, tr("NOW PLAYING"), 13, Ui::alpha(p.textDim, a));
+        Ui::text(Ui::bandLeft(), 15, tr("NOW PLAYING"), 13, Ui::alpha(0xFFFFFFC0, a));
         if (s.order.size() > 1) {
             char b[96];
             /* TRANSLATORS: the track's place in the queue; Shuffle: shuffle is on */
             snprintf(b, sizeof(b), s.shuffle ? tr("%d of %d  \xc2\xb7  Shuffle") : tr("%d of %d"),
                      s.pos + 1, (int)s.order.size());
-            Ui::textRight(592, 22, b, 13, Ui::alpha(p.textDim, a));
+            Ui::textRight(612, 15, b, 13, Ui::alpha(0xFFFFFFC0, a));
         }
         marquee(s.title, COL_X, ART_Y - 2, COL_W, 26, Ui::alpha(p.text, a), s.titleSince);
         if (!s.artist.empty())
@@ -910,9 +910,9 @@ void drawScreen(bool live, bool loading)
     if (!s.toastMsg.empty() && nowMs() < s.toastUntil) {
         const char* msg = tr(s.toastMsg.c_str());
         int w = Ui::textWidth(msg, 15) + 28;
-        Ui::shadow(320 - w / 2, 40, w, 30, 15, 8.0f, p.shadow);
-        Ui::roundRect(320 - w / 2, 40, w, 30, 15, p.accent, p.accentDark);
-        Ui::textCentered(320, 46, msg, 15, p.textOnAccent);
+        Ui::shadow(320 - w / 2, 54, w, 30, 15, 8.0f, p.shadow);
+        Ui::roundRect(320 - w / 2, 54, w, 30, 15, p.accent, p.accentDark);
+        Ui::textCentered(320, 60, msg, 15, p.textOnAccent);
     }
 }
 

@@ -3,10 +3,12 @@
 #include "LibraryDraw.h"
 #include "Ui.h"
 #include "../input/Input.h"
+#include "../core/SoundFX.h"
 #include "../core/Text.h"
 #include "../core/Lang.h"
 #include "../core/Utils.h"
 #include <stdio.h>
+#include <math.h>
 
 using namespace LibDraw;
 
@@ -50,15 +52,14 @@ bool overBack(const ir_t& ir)
     return dx * dx + dy * dy < (BACK_R + 4) * (BACK_R + 4);
 }
 
-/* the track rows there are, top down: -1 Version, 0 Audio, 1 Subtitles,
- * 2 Scenes; row i's box */
+/* the track rows there are, top down: -1 Version, 0 Audio, 1 Subtitles;
+ * row i's box */
 std::vector<int> trackRows(const JellyfinItemDetail& d)
 {
     std::vector<int> rows;
     if (!d.versions.empty())        rows.push_back(-1);
     if (!d.audioStreams.empty())    rows.push_back(0);
     if (!d.subtitleStreams.empty()) rows.push_back(1);
-    if (!d.chapters.empty())        rows.push_back(2);
     return rows;
 }
 const float ROW_STEP = 26, ROW_H = 22;
@@ -69,6 +70,56 @@ void rowBox(const DetailLayout& L, int i, float& x, float& y, float& w, float& h
 /* the rectangular buttons' corners */
 const float BTN_R = 3;
 
+/* what the D-pad can be on (LibraryView::detailFocus): Play, Add to Queue,
+ * the back button, Read more (an overview cut short), track row F_ROW + i */
+const int F_PLAY = 0, F_QUEUE = 1, F_BACK = 2, F_MORE = 3, F_ROW = 10;
+
+/* a track's list: rows of MENU_ROW_H, TRACK_MENU_ROWS at most shown */
+const int   TRACK_MENU_ROWS = 7;
+const float MENU_STEP = 28, MENU_ROW_H = 24;
+/* it hangs under its button, kept above the bottom of the screen */
+void menuBox(const DetailLayout& L, const std::vector<int>& rows, int which, int n,
+             float& x, float& y, float& w, float& h)
+{
+    int at = 0;
+    for (int i = 0; i < (int)rows.size(); ++i) if (rows[i] == which) at = i;
+    float bx, by, bw, bh;
+    rowBox(L, at, bx, by, bw, bh);
+    const int shown = n < TRACK_MENU_ROWS ? n : TRACK_MENU_ROWS;
+    x = bx; w = bw;
+    h = 12 + shown * MENU_STEP - (MENU_STEP - MENU_ROW_H);
+    y = by + bh + 4;
+    if (y + h > 460) y = 460 - h;
+}
+
+/* Validate UTF-8 and truncate at a safe codepoint boundary so the
+ * renderer never receives a broken multi-byte sequence. */
+std::string safeTitle(const char* s, int maxCodepoints)
+{
+    if (!s) return "-";
+    std::string out;
+    const unsigned char* p = (const unsigned char*)s;
+    int count = 0;
+    while (*p && count < maxCodepoints) {
+        int seqLen;
+        if      (*p < 0x80) seqLen = 1;
+        else if (*p < 0xE0) seqLen = 2;
+        else if (*p < 0xF0) seqLen = 3;
+        else                seqLen = 4;
+        bool valid = true;
+        for (int i = 1; i < seqLen; i++) {
+            if ((p[i] & 0xC0) != 0x80) { valid = false; break; }
+        }
+        if (!valid) { p++; continue; }
+        for (int i = 0; i < seqLen; i++) out += (char)p[i];
+        p += seqLen;
+        ++count;
+    }
+    if (*p) out += "...";
+    if (out.empty()) out = "?";
+    return out;
+}
+
 const float OV_SIZE = 14, OV_STEP = 18;   /* the overview's lines */
 const float CREDITS_Y = 354;              /* Cast, Director, genres */
 
@@ -78,6 +129,7 @@ bool LibraryView::updateDetail(ir_t& ir, bool aPressed) {
     /* the whole overview over the page: Up / Down a line, B or - closes */
     if (overviewPanel) {
         const int maxTop = (int)overviewAll.size() > OV_PANEL_ROWS ? (int)overviewAll.size() - OV_PANEL_ROWS : 0;
+        /* B, -, A (on its ✕ or anywhere) close it */
         if (Input::isBackPressed() || Input::isLPressed() || aPressed) overviewPanel = false;
         else if (Input::isUpPressed()   && overviewTop > 0)      overviewTop--;
         else if (Input::isDownPressed() && overviewTop < maxTop) overviewTop++;
@@ -85,50 +137,77 @@ bool LibraryView::updateDetail(ir_t& ir, bool aPressed) {
         else if (Input::isRightPressed()) overviewTop = overviewTop + OV_PANEL_ROWS < maxTop ? overviewTop + OV_PANEL_ROWS : maxTop;
         return false;
     }
-    /* the pointer on the back or favourite button */
-    if (aPressed && overBack(ir)) {
-        freeDetail();
-        state = detailReturnState;
+    const DetailLayout L = detailLayout(detailWideThumb());
+    const std::vector<int> rows = trackRows(detail);
+
+    /* a track's list open: Up / Down (or the pointer) pick, A takes it, B
+     * (or A off the list) closes it */
+    if (trackMenu != TRACK_MENU_NONE) {
+        const int n = trackMenuCount();
+        float mx, my, mw, mh;
+        menuBox(L, rows, trackMenu, n, mx, my, mw, mh);
+        int hover = -1;
+        for (int i = 0; i < TRACK_MENU_ROWS && trackMenuTop + i < n; ++i)
+            if (inBox(ir, mx + 6, my + 6 + i * MENU_STEP, mw - 12, MENU_ROW_H)) hover = trackMenuTop + i;
+        if (hover >= 0) trackMenuSel = hover;
+        if (Input::isUpPressed()   && trackMenuSel > 0)     --trackMenuSel;
+        if (Input::isDownPressed() && trackMenuSel + 1 < n) ++trackMenuSel;
+        if (trackMenuSel < trackMenuTop) trackMenuTop = trackMenuSel;
+        if (trackMenuSel >= trackMenuTop + TRACK_MENU_ROWS) trackMenuTop = trackMenuSel - TRACK_MENU_ROWS + 1;
+        if (Input::isBackPressed() || (aPressed && ir.valid && hover < 0)) {
+            SoundFX::play(SoundFX::FX::Back);
+            trackMenu = TRACK_MENU_NONE;
+        } else if (aPressed) {
+            SoundFX::play(SoundFX::FX::Start);
+            if (trackMenu < 0)       selectVersion(trackMenuSel);
+            else if (trackMenu == 0) detailAudioSel = trackMenuSel;
+            else                     detailSubSel   = trackMenuSel - 1;   /* row 0: Off */
+            trackMenu = TRACK_MENU_NONE;
+        }
         return false;
     }
-    if (aPressed) {
-        const DetailLayout L = detailLayout(detailWideThumb());
-        if (inBox(ir, L.bx, L.favY, L.bw, L.favH)) {
-            toggleFavorite(detailItemId, detail.isFavorite);
-            return false;
-        }
-        const std::vector<int> rows = trackRows(detail);
+
+    /* what A acts on: under the pointer, or the D-pad's choice */
+    int target = -1;
+    if (ir.valid) {
+        if (overBack(ir))                                 target = F_BACK;
+        else if (inBox(ir, L.bx, L.playY, L.bw, L.playH)) target = F_PLAY;
+        else if (overviewCut && inBox(ir, moreX, moreY, moreW, moreH)) target = F_MORE;
+        else if (inBox(ir, L.bx, L.favY, L.bw, L.favH))   target = F_QUEUE;
         for (int i = 0; i < (int)rows.size(); ++i) {
             float x, y, w, h;
             rowBox(L, i, x, y, w, h);
-            if (!inBox(ir, x, y, w, h)) continue;
-            detailFocusRow = rows[i];
-            if (rows[i] == 2) { state = State::ScenesLoad; return false; }
-            if (rows[i] < 0)
-                selectVersion((detailVersionSel + 1) % (int)detail.versions.size());
-            else if (rows[i] == 0 && ++detailAudioSel >= (int)detail.audioStreams.size())
-                detailAudioSel = 0;
-            else if (rows[i] == 1 && ++detailSubSel >= (int)detail.subtitleStreams.size())
-                detailSubSel = -1;
-            return false;
+            if (inBox(ir, x, y, w, h)) target = F_ROW + i;
         }
+    } else {
+        target = detailFocus;
     }
+
     /* -, or A with the pointer on it: the overview the page cuts short */
     const bool onOverview = ir.valid && ir.x >= MARGIN && ir.x < 640 - MARGIN &&
                             ir.y >= detailOvY0 && ir.y < detailOvY1;
-    if (overviewCut && (Input::isLPressed() || (aPressed && onOverview))) {
+    if (overviewCut && (Input::isLPressed() || (aPressed && (onOverview || target == F_MORE)))) {
         SYS_Report("[Detail] the whole overview: %d lines\n", (int)overviewAll.size());
         overviewPanel = true;
         overviewTop = 0;
         return false;
     }
-    /* A on the Scenes row: its chapters */
-    if (aPressed && detailFocusRow == 2 && !detail.chapters.empty()) {
-        state = State::ScenesLoad;
+
+    if (aPressed && target == F_BACK) {
+        freeDetail();
+        state = detailReturnState;
+        return false;
+    }
+    if (aPressed && target == F_QUEUE) {
+        toggleFavorite(detailItemId, detail.isFavorite);
+        return false;
+    }
+    if (aPressed && target >= F_ROW && target - F_ROW < (int)rows.size()) {
+        openTrackMenu(rows[target - F_ROW]);
         return false;
     }
     // A: play
-    if (aPressed) {
+    if (aPressed && target == F_PLAY) {
         if (detail.playbackPositionTicks > 0) {
             // There is a saved position — ask the user Continue / Start Over
             resumeSel = 0;
@@ -157,37 +236,58 @@ bool LibraryView::updateDetail(ir_t& ir, bool aPressed) {
     if (Input::isBackPressed()) {
         freeDetail();
         state = detailReturnState;
-    } else if (Input::isUpPressed() || Input::isDownPressed()) {
-        /* the rows there are: Version (several files), Audio, Subtitles,
-         * Scenes (chapters); Audio when none */
-        std::vector<int> rows;
-        if (!detail.versions.empty())        rows.push_back(-1);
-        if (!detail.audioStreams.empty())    rows.push_back(0);
-        if (!detail.subtitleStreams.empty()) rows.push_back(1);
-        if (!detail.chapters.empty())        rows.push_back(2);
-        int at = -1;
-        for (int i = 0; i < (int)rows.size(); ++i) if (rows[i] == detailFocusRow) at = i;
-        if (rows.empty()) detailFocusRow = 0;
-        else if (at < 0) detailFocusRow = rows[0];
-        else detailFocusRow = rows[Input::isUpPressed() ? (at > 0 ? at - 1 : 0)
-                                                        : (at + 1 < (int)rows.size() ? at + 1 : at)];
-    } else if (detailFocusRow < 0 && (Input::isLeftPressed() || Input::isRightPressed())) {
-        const int n = (int)detail.versions.size();
-        selectVersion((detailVersionSel + (Input::isLeftPressed() ? n - 1 : 1)) % n);
-    } else if (Input::isLeftPressed()) {
-        if (detailFocusRow == 0 && !detail.audioStreams.empty()) {
-            if (--detailAudioSel < 0) detailAudioSel = (int)detail.audioStreams.size() - 1;
-        } else if (detailFocusRow == 1 && !detail.subtitleStreams.empty()) {
-            if (--detailSubSel < -1) detailSubSel = (int)detail.subtitleStreams.size() - 1;
-        }
-    } else if (Input::isRightPressed()) {
-        if (detailFocusRow == 0 && !detail.audioStreams.empty()) {
-            if (++detailAudioSel >= (int)detail.audioStreams.size()) detailAudioSel = 0;
-        } else if (detailFocusRow == 1) {
-            if (++detailSubSel >= (int)detail.subtitleStreams.size()) detailSubSel = -1;
-        }
+        return false;
     }
+
+    /* the D-pad walks the buttons: Play and Add to Queue on the left, the
+     * tracks on the right, the back button above them */
+    const int nRows = (int)rows.size();
+    const int was = detailFocus;
+    if (detailFocus >= F_ROW + nRows) detailFocus = F_PLAY;   /* the tracks changed */
+    const bool row = detailFocus >= F_ROW;
+    const int  r   = detailFocus - F_ROW;
+    if (detailFocus == F_MORE && !overviewCut) detailFocus = F_QUEUE;
+    if (Input::isUpPressed()) {
+        if (detailFocus == F_MORE)       detailFocus = F_QUEUE;
+        else if (detailFocus == F_QUEUE) detailFocus = F_PLAY;
+        else if (detailFocus == F_PLAY)  detailFocus = F_BACK;
+        else if (row)                    detailFocus = r > 0 ? detailFocus - 1 : F_BACK;
+    } else if (Input::isDownPressed()) {
+        if (detailFocus == F_BACK)       detailFocus = nRows ? F_ROW : F_PLAY;
+        else if (detailFocus == F_PLAY)  detailFocus = F_QUEUE;
+        else if (detailFocus == F_QUEUE && overviewCut) detailFocus = F_MORE;
+        else if (row && r + 1 < nRows)   detailFocus = detailFocus + 1;
+        else if (row && overviewCut)     detailFocus = F_MORE;
+    } else if (Input::isRightPressed()) {
+        if (detailFocus == F_PLAY && nRows)  detailFocus = F_ROW;
+        if (detailFocus == F_QUEUE && nRows) detailFocus = F_ROW + (nRows > 1 ? 1 : 0);
+    } else if (Input::isLeftPressed()) {
+        if (row)                         detailFocus = r == 0 ? F_PLAY : F_QUEUE;
+        else if (detailFocus == F_BACK)  detailFocus = F_PLAY;
+    }
+    if (detailFocus != was) SoundFX::play(SoundFX::FX::Move);
     return false;
+}
+
+/* A on a track's button: its list, the current one chosen */
+void LibraryView::openTrackMenu(int which) {
+    trackMenu = which;
+    trackMenuSel = which < 0 ? detailVersionSel : which == 0 ? detailAudioSel : detailSubSel + 1;
+    if (trackMenuSel < 0) trackMenuSel = 0;
+    trackMenuTop = trackMenuSel >= TRACK_MENU_ROWS ? trackMenuSel - TRACK_MENU_ROWS + 1 : 0;
+    SoundFX::play(SoundFX::FX::Open);
+}
+
+int LibraryView::trackMenuCount() const {
+    if (trackMenu < 0)  return (int)detail.versions.size();
+    if (trackMenu == 0) return (int)detail.audioStreams.size();
+    return (int)detail.subtitleStreams.size() + 1;   /* Off first */
+}
+
+std::string LibraryView::trackMenuLabel(int i) const {
+    if (trackMenu < 0)  return detail.versions[i].name;
+    if (trackMenu == 0) return detail.audioStreams[i].displayTitle;
+    return i == 0 ? std::string(tr("Off")) : detail.subtitleStreams[i - 1].displayTitle;
 }
 
 bool LibraryView::updateResumePrompt(ir_t& ir, bool aPressed) {
@@ -266,16 +366,17 @@ void LibraryView::renderResumePrompt() {
 
 // ---------------------------------------------------------------
 // drawDetailView(): the old video channels' title page.  Under the red
-// band: the title, a small poster with Play and the favourite button
-// beside it (the tracks further right), then a line of stars, rating,
-// year and running time, the overview, and Cast / Director / genres.
+// band: the title, a small poster with Play and Add to Queue beside it
+// (the tracks further right, each opening a list), then a line of stars,
+// rating, year and running time, the overview, and Cast / Director /
+// genres.  The D-pad walks the buttons (detailFocus), as the pointer does.
 // ---------------------------------------------------------------
 void LibraryView::drawDetailView(ir_t& ir) {
     const Ui::Palette& p = Ui::pal();
     const DetailLayout L = detailLayout(detailWideThumb());
     const int pageW = 640 - 2 * (int)MARGIN;
 
-    Ui::backButton(backCx(), BACK_CY, BACK_R, overBack(ir));
+    Ui::backButton(backCx(), BACK_CY, BACK_R, overBack(ir) || (!ir.valid && detailFocus == F_BACK));
 
     // ---- Title ----
     {
@@ -289,94 +390,49 @@ void LibraryView::drawDetailView(ir_t& ir) {
         }
     }
 
-    // ---- Poster, Play, favourite ----
-    const bool posterHover = inBox(ir, L.px, L.py, L.pw * WiiUtils::wsScaleX(), L.ph);
-    drawThumb(detailTex, L.px, L.py, L.pw, L.ph, posterHover ? 0.8f : 0.0f, progressOf(detail),
+    // ---- Poster, Play, Add to Queue ----
+    /* orange: under the pointer, or the D-pad's choice while it is away */
+    auto lit = [&](int f, bool hover) { return (ir.valid ? hover : detailFocus == f) ? 1.0f : 0.0f; };
+    drawThumb(detailTex, L.px, L.py, L.pw, L.ph, 0.0f, progressOf(detail),
               detail.name.c_str(), false);
-    const bool playHover = inBox(ir, L.bx, L.playY, L.bw, L.playH);
-    const bool favHover  = inBox(ir, L.bx, L.favY, L.bw, L.favH);
-    /* Play is what A does: orange under the pointer, and while it is away */
     Ui::button(L.bx, L.playY, L.bw, L.playH, N_("Play"), 19,
-               playHover || !ir.valid ? 1.0f : 0.0f, BTN_R);
+               lit(F_PLAY, inBox(ir, L.bx, L.playY, L.bw, L.playH)), BTN_R);
     Ui::button(L.bx, L.favY, L.bw, L.favH,
                detail.isFavorite ? N_("Remove from Queue") : N_("Add to Queue"), 14,
-               favHover ? 1.0f : 0.0f, BTN_R);
+               lit(F_QUEUE, inBox(ir, L.bx, L.favY, L.bw, L.favH)), BTN_R);
 
-    // ---- Audio / Subtitle / Version / Scenes, right of the buttons ----
-    const bool hasVersions = !detail.versions.empty();
-    const bool hasScenes   = !detail.chapters.empty();
-    const bool hasAudio    = !detail.audioStreams.empty();
-    const bool hasSub      = !detail.subtitleStreams.empty();
-    float rowsBottom = L.playY;
-    if (hasAudio || hasSub || hasVersions || hasScenes) {
-        // Validate UTF-8 and truncate at a safe codepoint boundary so the
-        // renderer never receives a broken multi-byte sequence.
-        auto safeTitle = [](const char* s, int maxCodepoints) -> std::string {
-            if (!s) return "-";
-            std::string out;
-            const unsigned char* p = (const unsigned char*)s;
-            int count = 0;
-            while (*p && count < maxCodepoints) {
-                int seqLen;
-                if      (*p < 0x80) seqLen = 1;
-                else if (*p < 0xE0) seqLen = 2;
-                else if (*p < 0xF0) seqLen = 3;
-                else                seqLen = 4;
-                bool valid = true;
-                for (int i = 1; i < seqLen; i++) {
-                    if ((p[i] & 0xC0) != 0x80) { valid = false; break; }
-                }
-                if (!valid) { p++; continue; }
-                for (int i = 0; i < seqLen; i++) out += (char)p[i];
-                p += seqLen;
-                ++count;
-            }
-            if (*p) out += "...";
-            if (out.empty()) out = "?";
-            return out;
-        };
-
-        const int valX = (int)L.rowsX + 78, valW = (int)(L.rowsX + L.rowsW) - valX - 4;
-        const std::vector<int> rows = trackRows(detail);
-        for (int i = 0; i < (int)rows.size(); ++i) {
-            const int row = rows[i];
-            float bx, by, bw, bh;
-            rowBox(L, i, bx, by, bw, bh);
-            /* white buttons: orange under the pointer, or the D-pad's row
-             * (Left / Right change it) while the pointer is away */
-            const bool focused = ir.valid ? inBox(ir, bx, by, bw, bh) : detailFocusRow == row;
-            Ui::button(bx, by, bw, bh, "", 13, focused ? 1.0f : 0.0f, BTN_R);
-            const int ry = (int)(by + (bh - 13) * 0.5f) - 1;
-            const u32 labelCol = focused ? p.textOnAccent : p.textDim;
-            const u32 valueCol = focused ? p.textOnAccent : p.text;
-            if (row == 2) {   /* the Scenes: A opens them */
-                char buf[64];
-                snprintf(buf, sizeof(buf), tr("%d chapters"), (int)detail.chapters.size());
-                std::string v = std::string(buf) + "  \xe2\x80\xba";
-                Ui::text(L.rowsX + 4, ry, tr("Scenes"), 13, labelCol);
-                Text::print(valX, ry, font, v.c_str(), 13, valueCol);
-            } else {
-                const char* label = row < 0 ? N_("Version") : row == 0 ? N_("Audio") : N_("Subtitles");
-                const char* rawTitle;
-                if (row < 0)
-                    rawTitle = detail.versions[detailVersionSel].name.c_str();
-                else if (row == 0)
-                    rawTitle = detailAudioSel < (int)detail.audioStreams.size()
-                        ? detail.audioStreams[detailAudioSel].displayTitle.c_str() : "-";
-                else
-                    rawTitle = (detailSubSel == -1)
-                        ? tr("Off")
-                        : (detailSubSel < (int)detail.subtitleStreams.size()
-                            ? detail.subtitleStreams[detailSubSel].displayTitle.c_str() : "-");
-                Ui::text(L.rowsX + 4, ry, tr(label), 13, labelCol);
-                std::string t = fitText(font, safeTitle(rawTitle, 36), 13, valW - 24);
-                char buf[96];
-                snprintf(buf, sizeof(buf), "\xe2\x80\xb9 %s \xe2\x80\xba", t.c_str());
-                Text::print(valX, ry, font, buf, 13, valueCol);
-            }
-        }
-        rowsBottom = L.playY + rows.size() * ROW_STEP;
+    // ---- Version / Audio / Subtitles, right of the buttons: A opens a list ----
+    const std::vector<int> rows = trackRows(detail);
+    const int valX = (int)L.rowsX + 78, valW = (int)(L.rowsX + L.rowsW) - valX - 4;
+    for (int i = 0; i < (int)rows.size(); ++i) {
+        const int row = rows[i];
+        float bx, by, bw, bh;
+        rowBox(L, i, bx, by, bw, bh);
+        const bool focused = trackMenu == row || lit(F_ROW + i, inBox(ir, bx, by, bw, bh)) > 0.0f;
+        Ui::button(bx, by, bw, bh, "", 13, focused ? 1.0f : 0.0f, BTN_R);
+        const int ry = (int)(by + (bh - 13) * 0.5f) - 1;
+        const u32 labelCol = focused ? p.textOnAccent : p.textDim;
+        const u32 valueCol = focused ? p.textOnAccent : p.text;
+        const char* label = row < 0 ? N_("Version") : row == 0 ? N_("Audio") : N_("Subtitles");
+        const char* rawTitle;
+        if (row < 0)
+            rawTitle = detail.versions[detailVersionSel].name.c_str();
+        else if (row == 0)
+            rawTitle = detailAudioSel < (int)detail.audioStreams.size()
+                ? detail.audioStreams[detailAudioSel].displayTitle.c_str() : "-";
+        else
+            rawTitle = (detailSubSel == -1)
+                ? tr("Off")
+                : (detailSubSel < (int)detail.subtitleStreams.size()
+                    ? detail.subtitleStreams[detailSubSel].displayTitle.c_str() : "-");
+        Ui::text(L.rowsX + 4, ry, tr(label), 13, labelCol);
+        std::string t = fitText(font, safeTitle(rawTitle, 36), 13, valW - 14);
+        Text::print(valX, ry, font, t.c_str(), 13, valueCol);
+        /* a small down arrow: it opens a list */
+        const float ax = bx + bw - 12, ay = by + bh * 0.5f;
+        Ui::triangle(ax - 4, ay - 2, ax + 4, ay - 2, ax, ay + 3, valueCol);
     }
+    const float rowsBottom = rows.empty() ? L.playY : L.playY + rows.size() * ROW_STEP;
 
     // ---- Stars, rating, year, running time (and watched, resume) ----
     float y = L.py + L.ph;
@@ -428,18 +484,19 @@ void LibraryView::drawDetailView(ir_t& ir) {
     // ---- Overview (pre-computed lines, no per-frame width measuring) ----
     if (!detailLines.empty()) {
         detailOvY0 = y;
-        const bool hover = overviewCut && ir.valid && ir.x >= MARGIN && ir.x < MARGIN + pageW &&
-                           ir.y >= detailOvY0 && ir.y < detailOvY1;
         for (const auto& line : detailLines) {
-            Ui::text(MARGIN, y, line.c_str(), (int)OV_SIZE, hover ? p.accentDark : p.text);
-            y += OV_STEP;
-        }
-        if (overviewCut) {   /* the rest of it: - (or A on the text) */
-            const Ui::Hint more = { "-", N_("Read more") };
-            Ui::hint(MARGIN + pageW - Ui::hintWidth(more) + 14, y - 1, more);
+            Ui::text(MARGIN, y, line.c_str(), (int)OV_SIZE, p.text);
             y += OV_STEP;
         }
         detailOvY1 = y;
+        if (overviewCut) {   /* the rest of it: Read more (or A on the text, or -) */
+            moreW = (float)Ui::textWidth(tr("Read more"), 14) + 28; moreH = 22;
+            moreX = MARGIN + pageW - moreW; moreY = y + 1;
+            Ui::button(moreX, moreY, moreW, moreH, N_("Read more"), 14,
+                       lit(F_MORE, inBox(ir, moreX, moreY, moreW, moreH)), BTN_R);
+        } else {
+            moreY = -100;
+        }
     }
 
     // ---- Cast, Director, genres ----
@@ -478,25 +535,42 @@ void LibraryView::drawDetailView(ir_t& ir) {
         line(nullptr, genres);
     }
 
-    // ---- Footer ----
-    const Ui::Hint l[] = { { "A", detailFocusRow == 2 && hasScenes ? N_("Scenes") : N_("Play") }, { "B", N_("Back") },
-                           { "1", N_("Queue") },   /* add / remove: the button says which */
-                           { "+!", detail.played ? N_("Unwatched") : N_("Watched") },
-                           { "2", N_("Extras") } };   /* short: 5 hints + Focus, Change */
-    const Ui::Hint r[] = { { "UD", N_("Focus") }, { "LR", N_("Change") } };
-    const bool full = detail.specialFeatures > 0;   /* no room left for Focus */
-    Ui::footer(l, full ? 5 : 4, full ? r + 1 : r, (hasAudio || hasSub || hasVersions || hasScenes) ? (full ? 1 : 2) : 0);
-    if (overviewPanel) renderOverviewPanel();
+    // ---- a track's list, over the page ----
+    if (trackMenu != TRACK_MENU_NONE) {
+        const int n = trackMenuCount();
+        float mx, my, mw, mh;
+        menuBox(L, rows, trackMenu, n, mx, my, mw, mh);
+        Ui::shadow(mx, my + 3, mw, mh, 6, 8.0f, 0x00000060);
+        Ui::roundRect(mx, my, mw, mh, 4, p.cardTop, p.cardBottom);
+        Ui::roundBorder(mx, my, mw, mh, 4, 1.5f, p.cardBorder);
+        const int current = trackMenu < 0 ? detailVersionSel : trackMenu == 0 ? detailAudioSel : detailSubSel + 1;
+        const float sbw = n > TRACK_MENU_ROWS ? 10 : 0;   /* room for the scrollbar */
+        for (int i = 0; i < TRACK_MENU_ROWS && trackMenuTop + i < n; ++i) {
+            const int k = trackMenuTop + i;
+            const float ix = mx + 6, iy = my + 6 + i * MENU_STEP, iw = mw - 12 - sbw;
+            const bool on = k == trackMenuSel;
+            Ui::button(ix, iy, iw, MENU_ROW_H, "", 13, on ? 1.0f : 0.0f, BTN_R);
+            const u32 c = on ? p.textOnAccent : p.text;
+            std::string t = fitText(font, safeTitle(trackMenuLabel(k).c_str(), 40), 13, (int)iw - 34);
+            Text::print(ix + 10, iy + 4, font, t.c_str(), 13, c);
+            if (k == current)   /* the one in use */
+                Text::print(ix + iw - 20, iy + 4, font, "\xe2\x9c\x93", 13, on ? c : p.ok);
+        }
+        if (n > TRACK_MENU_ROWS)
+            Ui::scrollbar(mx + mw - 10, my + 6, mh - 12, trackMenuTop, TRACK_MENU_ROWS, n);
+    }
+    if (overviewPanel) renderOverviewPanel(ir);
 }
 
 /* The whole overview in a panel over the page */
-void LibraryView::renderOverviewPanel() {
+void LibraryView::renderOverviewPanel(const ir_t& ir) {
     const Ui::Palette& p = Ui::pal();
     GRRLIB_Rectangle(Ui::screenLeft(), 0, Ui::screenWidth(), 480, p.dim, 1);
-    /* the title on up to three lines: the whole name of a long episode */
-    const std::vector<std::string> title = wrapText(filterDejaVu(detail.name, 200), 18, OV_PANEL_W, 3);
+    /* the title on up to three lines (the whole name of a long episode),
+     * clear of the ✕ */
+    const std::vector<std::string> title = wrapText(filterDejaVu(detail.name, 200), 18, OV_PANEL_W - 36, 3);
     const int TH = 22 * (title.empty() ? 1 : (int)title.size());
-    const int PW = OV_PANEL_W + 48, PH = 42 + TH + OV_PANEL_ROWS * 20 + 36;
+    const int PW = OV_PANEL_W + 48, PH = 42 + TH + OV_PANEL_ROWS * 20 + 12;
     const int PX = (640 - PW) / 2, PY = (450 - PH) / 2;
     Ui::card(PX, PY, PW, PH, 18, 0.0f);
     for (size_t i = 0; i < title.size(); i++)
@@ -509,11 +583,17 @@ void LibraryView::renderOverviewPanel() {
                  Ui::mix(p.text, p.textDim, 0.15f));
     if (n > OV_PANEL_ROWS)
         Ui::scrollbar(PX + PW - 14, LY, OV_PANEL_ROWS * 20 - 4, overviewTop, OV_PANEL_ROWS, n);
-    /* hints at the bottom of the panel */
-    const Ui::Hint h[] = { { "UD", N_("Scroll") }, { "B", N_("Close") } };
-    const int nh = n > OV_PANEL_ROWS ? 2 : 1;
-    float hw = 0;
-    for (int i = 2 - nh; i < 2; i++) hw += Ui::hintWidth(h[i]);
-    float hx = 320 - (hw - 14) * 0.5f;
-    for (int i = 2 - nh; i < 2; i++) hx += Ui::hint(hx, PY + PH - 28, h[i]);
+    /* ✕ at the top right: orange, a little bigger under the pointer */
+    ovCloseX = PX + PW - 26; ovCloseY = PY + 24;
+    const bool hot = ir.valid && (ir.x - ovCloseX) * (ir.x - ovCloseX) + (ir.y - ovCloseY) * (ir.y - ovCloseY) < 20 * 20;
+    const float a = 8 * (hot ? Ui::HOVER_GROW : 1.0f), t = 3.2f * (hot ? Ui::HOVER_GROW : 1.0f);
+    const u32 c = hot ? Ui::HOVER_TOP : p.text;
+    auto stroke = [&](float x0, float y0, float x1, float y1) {
+        const float dx = x1 - x0, dy = y1 - y0, l = sqrtf(dx * dx + dy * dy);
+        const float nx = -dy / l * t * 0.5f, ny = dx / l * t * 0.5f;
+        Ui::triangle(x0 + nx, y0 + ny, x1 + nx, y1 + ny, x1 - nx, y1 - ny, c);
+        Ui::triangle(x0 + nx, y0 + ny, x1 - nx, y1 - ny, x0 - nx, y0 - ny, c);
+    };
+    stroke(ovCloseX - a, ovCloseY - a, ovCloseX + a, ovCloseY + a);
+    stroke(ovCloseX + a, ovCloseY - a, ovCloseX - a, ovCloseY + a);
 }

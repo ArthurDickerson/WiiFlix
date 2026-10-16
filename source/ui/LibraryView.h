@@ -120,8 +120,6 @@ private:
         SearchReady,          // show search results
         SpecialsLoad,         // blocking: a film's or a series' special features
         SpecialsReady,        // show them (LibrarySpecials.cpp)
-        ScenesLoad,           // blocking: a film's or an episode's chapters and their pictures
-        ScenesReady,          // show them (LibraryScenes.cpp)
         PhotoReady,           // a photo, the folder's others with Left / Right (LibraryPhotos.cpp)
         Error
     };
@@ -222,11 +220,21 @@ private:
     bool overviewPanel = false;
     int  overviewTop   = 0;
     float detailOvY0 = 0, detailOvY1 = 0;   // where the page draws it (pointer)
+    float moreX = 0, moreY = -100, moreW = 0, moreH = 0;   // its Read more button (drawn there)
+    float ovCloseX = -1000, ovCloseY = 0;   // the whole overview's ✕ (drawn there)
     std::vector<std::string> wrapText(const std::string& text, int size, float w, int maxLines);
-    void renderOverviewPanel();
+    void renderOverviewPanel(const ir_t& ir);
     int detailAudioSel = 0;  // index into detail.audioStreams
     int detailSubSel   = -1; // index into detail.subtitleStreams; -1 = off
-    int detailFocusRow = 0;  // 0 = audio row focused, 1 = subtitle row focused, -1 = version
+    /* the details page: what the D-pad is on (Play, Add to Queue, the back
+     * button, a track's button: LibraryDetail.cpp), and the track list open
+     * (-1 Version, 0 Audio, 1 Subtitles) with its choice */
+    int  detailFocus = 0;
+    static const int TRACK_MENU_NONE = -2;
+    int  trackMenu = TRACK_MENU_NONE, trackMenuSel = 0, trackMenuTop = 0;
+    void openTrackMenu(int which);
+    int  trackMenuCount() const;
+    std::string trackMenuLabel(int i) const;
     int detailVersionSel = 0;  // index into detail.versions (several files)
     void selectVersion(int v); // its tracks in the audio / subtitle rows
     void selectDefaultTracks(int audioIndex, int subIndex);   // stream indexes, -1 none
@@ -447,14 +455,6 @@ private:
     int         specialsGroup = -1;    // folders: -1 the kinds, else the kind shown
     bool        specialsFolders() const;   // many of several kinds: a folder per kind
     void        openSpecials(const std::string& id, const std::string& name, State back);
-    /* the Scenes (chapters) of the page's film or episode */
-    std::vector<JellyfinChapter> scenes;
-    std::vector<GRRLIB_texImg*>  sceneTex;
-    int  sceneSel = 0, sceneTop = 0;
-    void freeScenes();
-    void loadScenes();
-    bool updateScenes(ir_t& ir, bool aPressed);
-    void renderScenes(ir_t& ir);
     /* the photos of a folder, one at a time (a slideshow with A) */
     std::vector<JellyfinItem> photos;
     int            photoSel = 0;

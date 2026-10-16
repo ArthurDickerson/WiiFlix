@@ -76,7 +76,7 @@ bool showErrorScreen(const char* title, const std::string& line1,
         if (g_app_powerOff || g_app_reset) return false;
         if (Input::isBackPressed() || (!retry && Input::isAJustPressed())) return false;
         if (retry && Input::isAJustPressed()) { SoundFX::play(SoundFX::FX::Start); return true; }
-        Ui::background(false);
+        Ui::background();
         Ui::card(80, 150, 480, 130, 18, 0.0f);
         Ui::circle(114, 182, 13, p.danger);
         Ui::textCentered(114, 172, "!", 18, 0xFFFFFFFF);
@@ -183,6 +183,7 @@ void App::init(const char* argv0) {
 
     // Load textures and fonts from embedded data (no file I/O, always fast)
     logoTex   = GRRLIB_LoadTexture(logo_wiifin_png);
+    Ui::setLogo(logoTex);   /* on every red band */
     btnTex    = GRRLIB_LoadTexture(button_start_png);
     cursorPointerTex    = GRRLIB_LoadTexture(data_cursors_PointerP1_64_png);
     font   = GRRLIB_LoadTTF(wii_font_ttf, wii_font_ttf_len);
@@ -193,7 +194,7 @@ void App::init(const char* argv0) {
 
     // Show a splash frame immediately so the user sees something during init.
     if (logoTex) {
-        Ui::background(false);
+        Ui::roundRect(Ui::screenLeft(), 0, Ui::screenWidth(), 480, 0, Ui::RED, Ui::RED);
         float ls = 180.0f / logoTex->h;   /* 180 px tall */
         int lw = (int)(logoTex->w * ls);
         GRRLIB_DrawImg((640 - lw) / 2, (480 - (int)(logoTex->h * ls)) / 2,
@@ -402,7 +403,7 @@ void App::offerScreenCalibration(ir_t& ir) {
             }
             break;
         }
-        Ui::background(false);
+        Ui::background();
         Ui::card(70, 120, 500, 190, 18, 0.0f);
         Ui::textCentered(320, 140, tr("Does the whole picture fit your TV?"), 22, p.text);
         Ui::textCentered(320, 182, tr("Older TVs (CRT) often cut the edges of the picture."), 15, p.textDim);
@@ -450,7 +451,7 @@ void App::loop() {
                 if (g_app_powerOff || g_app_reset) { running = false; return false; }
                 if (Input::isBackPressed()) return false;
                 bool slow = ticks_to_millisecs(gettime()) - t0 > 10000;
-                Ui::background(false);
+                Ui::background();
                 Ui::spinner(ringTex, 320, 220);
                 Ui::textCentered(320, 274, tr("Connecting to the network..."), 18, p.textDim);
                 if (slow)
@@ -722,7 +723,8 @@ void App::loop() {
         }
 
         // ===================== RENDER =====================
-        Ui::background(false);
+        /* the WiiFlix menu: all red, the logo on it */
+        Ui::roundRect(Ui::screenLeft(), 0, Ui::screenWidth(), 480, 0, Ui::RED, Ui::RED);
 
         if (logoTex) {   /* 104 px tall: above the first button (BY_START) */
             float ls = 104.0f / logoTex->h;
@@ -735,9 +737,7 @@ void App::loop() {
             bool hover = ir.valid && ir.x >= BX && ir.x <= BX + BW && ir.y >= by && ir.y <= by + BH;
             bool focus = ir.valid ? hover : (i == selectedIndex);
             menuFocus[i] = Ui::approach(menuFocus[i], focus ? 1.0f : 0.0f);
-            float grow = 8.0f * menuFocus[i];
-            Ui::button(BX - grow, by - grow * 0.25f, BW + grow * 2, BH + grow * 0.5f,
-                       menuItems[i].c_str(), 22, menuFocus[i]);
+            Ui::button(BX, by, BW, BH, menuItems[i].c_str(), 22, menuFocus[i], 3);
         }
 
         {

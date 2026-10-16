@@ -10,15 +10,17 @@
 /* -----------------------------------------------------------------------
  * CoverLine — WiiFlix's home screen.
  *
- * One row of cover art at a time, as a long line: the selected cover sits
- * large in the middle, its neighbours smaller on both sides.  Above it,
- * the row's name in a long bar and a ▼▲ pill (the pointer's way to change
- * rows); under it the scrub bar, then the selected title and its details.
+ * One row of cover art at a time, as a line from the left: the cover in
+ * focus (under the pointer, or the D-pad's) grows in place, the ones after
+ * it make room; the line scrolls only when the D-pad takes the focus past
+ * an edge.  Above it, the row's name in a long bar (A on it: the list of
+ * rows, 8 a page) and a ▼▲ pill; under it the scrub bar, then the title in
+ * focus and its details.
  *
  *   Left / Right     previous / next cover (repeats while held)
  *   Up / Down        previous / next row (▲ / ▼ on screen)
- *   A                open the selected cover (pointer: a side cover is
- *                    selected first, A on the middle one opens it)
+ *   A                open the cover in focus (pointer: the one under it)
+ *   -                the list of rows
  *   1                search        +   browse (libraries, A-Z)
  *   2                profiles
  *
@@ -80,8 +82,10 @@ private:
         std::vector<GRRLIB_texImg*> tex;
         std::vector<unsigned char>  st;           /* TileState                  */
         unsigned char               state = ROW_PENDING;   /* under `lock` */
-        int                         sel    = 0;
-        float                       scroll = 0.0f;  /* animated, follows sel   */
+        int                         sel    = 0;     /* the cover in focus (big) */
+        int                         first  = 0;     /* the first one shown      */
+        float                       scroll = 0.0f;  /* animated, follows first  */
+        float                       fpos   = 0.0f;  /* animated, follows sel    */
     };
 
     JellyfinClient&  client;
@@ -102,6 +106,7 @@ private:
     int   hoverArrow  = 0;                /* scrub bar arrows: -1 left, +1 right */
     int   hoverRowBtn = 0;                /* row arrows: -1 up, +1 down          */
     bool  hoverKnob   = false;
+    bool  hoverLabel  = false;            /* the row's name: A opens the list */
     bool  hoverTrack  = false;
     bool  dragging    = false;
     float dragGrab    = 0.0f;             /* pointer x minus knob x at the grab   */
@@ -129,6 +134,10 @@ private:
     void moveRow(int delta);
     void step(Row& row, int delta);
     void setFromTrack(Row& row, float x);
+    /* covers that fit across the screen (one of them grown), and first
+     * moved only as far as it takes to show sel (the D-pad, the scrub bar) */
+    int  visibleCount() const;
+    void keepVisible(Row& r) const;
 
     float trackLeft() const;
     float trackRight() const;
@@ -136,8 +145,20 @@ private:
     void  coverRect(const Row& row, int i, float& x, float& y, float& w, float& h) const;
 
     void drawTop();
+
+    /* the list of rows over the line (CoverLine.cpp: "The list of rows") */
+    bool  menuOpen  = false;
+    int   menuPage  = 0, menuSel = 0;
+    int   menuHover = -1;                 /* the row under the pointer   */
+    int   menuArrow = 0;                  /* the page pill's ◀ -1 / ▶ +1 */
+    bool  menuClose = false;              /* the ✕ under the pointer     */
+    bool  menuPtr   = false;              /* the pointer drives it       */
+    int    menuPages() const;
+    void   openMenu();
+    void   jumpRow(int to);
+    Action updateMenu(const ir_t& ir);
+    void   drawMenu();
     void drawCovers(Row& row);
     void drawInfo(const Row& row);
     void drawScrubBar(const Row& row);
-    void drawHints();
 };

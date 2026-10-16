@@ -19,7 +19,7 @@
  * back button top right. */
 static const int   TOP_H    = 52;                 /* title area (toasts go under) */
 static const float BAR_Y    = 344;                /* the track's centre line      */
-static const float ARROW_X  = 34, ARROW_W = 26, ARROW_H = 36;
+static const float ARROW_X  = 36, ARROW_W = 36, ARROW_H = 28;   /* the old channels' arrowheads */
 static const float KNOB_R   = 15;
 static const float ROW_Y    = 396;                /* pills, pause...: centre line */
 static const float PILL_W   = 104, PILL_H = 30, PILL_DX = 130;
@@ -685,7 +685,7 @@ void PlayerView::render(const ir_t& ir)
 
         /* the orange knob, with its two little arrows */
         {
-            const float kx = tl + tw * frac, kr = KNOB_R + (hoverBar ? 2.0f : 0.0f);
+            const float kx = tl + tw * frac, kr = KNOB_R * (hoverBar ? Ui::HOVER_GROW : 1.0f);
             Ui::shadow(kx - kr, BAR_Y - kr + 2, kr * 2, kr * 2, kr, 5.0f, 0x00000080);
             Ui::circle(kx, BAR_Y, kr, 0xE2660EFF);
             Ui::circle(kx, BAR_Y - 1.5f, kr - 2.5f, 0xF5882AFF);

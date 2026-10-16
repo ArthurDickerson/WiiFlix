@@ -514,7 +514,7 @@ static void line(int y, const char* s, int size, u32 col) {
 void ConnectView::renderBackground() {
     const Ui::Palette& p = Ui::pal();
     Ui::background();
-    Ui::text(28, 12, tr("Connect to Jellyfin"), 22, p.text);
+    Ui::header(tr("Connect to Jellyfin"));
 
     // Tabs: one pill split into the segments update() hit-tests
     {
