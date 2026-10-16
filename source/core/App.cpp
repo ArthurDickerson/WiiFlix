@@ -194,7 +194,7 @@ void App::init(const char* argv0) {
     // Show a splash frame immediately so the user sees something during init.
     if (logoTex) {
         Ui::background(false);
-        float ls = 0.60f;
+        float ls = 180.0f / logoTex->h;   /* 180 px tall */
         int lw = (int)(logoTex->w * ls);
         GRRLIB_DrawImg((640 - lw) / 2, (480 - (int)(logoTex->h * ls)) / 2,
                        logoTex, 0, ls, ls, 0xFFFFFFFF);
@@ -724,10 +724,10 @@ void App::loop() {
         // ===================== RENDER =====================
         Ui::background(false);
 
-        if (logoTex) {
-            float ls = 0.62f;
+        if (logoTex) {   /* 104 px tall: above the first button (BY_START) */
+            float ls = 104.0f / logoTex->h;
             int lw = (int)(logoTex->w * ls);
-            GRRLIB_DrawImg((640 - lw) / 2, 40, logoTex, 0, ls, ls, 0xFFFFFFFF);
+            GRRLIB_DrawImg((640 - lw) / 2, 44, logoTex, 0, ls, ls, 0xFFFFFFFF);
         }
 
         for (int i = 0; i < MENU_COUNT; ++i) {

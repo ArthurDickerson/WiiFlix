@@ -788,18 +788,10 @@ void BrowseHome::drawHeader()
         GRRLIB_Rectangle(Ui::screenLeft(), 0, Ui::screenWidth(), 46, Ui::pal().bgTop, 1);
     }
 
-    /* Logo, top left.  On the red Flix band it sits on a white glossy pill
-     * like the search/browse buttons (its grey would vanish on the red). */
+    /* Logo, top left: white and black letters, on the band as on the grey */
     if (s_logo) {
-        const float h = 30, w = h * s_logo->w / s_logo->h * WiiUtils::wsScaleX();
-        float x = Ui::screenLeft() + 20, y = 7;
-        if (L.band) {
-            const float px = x - 4, py = y - 1, pw = w + 14, ph = h + 2;
-            Ui::shadow(px, py + 2, pw, ph, ph * 0.5f, 4.0f, 0x00000070);
-            Ui::roundRect(px, py, pw, ph, ph * 0.5f, 0xFFFFFFFF, 0xDCDCDCFF);
-            Ui::roundBorder(px, py, pw, ph, ph * 0.5f, 1.5f, 0x5E5E5EFF);
-            x += 3;
-        }
+        const float h = 36, w = h * s_logo->w / s_logo->h * WiiUtils::wsScaleX();
+        const float x = Ui::screenLeft() + 18, y = 4;
         GRRLIB_DrawImg(x, y, s_logo, 0, w / s_logo->w, h / s_logo->h, 0xFFFFFFFF);
     }
 

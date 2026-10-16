@@ -11,6 +11,11 @@
 #include <unistd.h>
 #include <ogc/lwp_watchdog.h>
 
+/* The WiiFlix logo (data/images/logo_wiifin.png), on the red band */
+extern unsigned char data_logo_wiifin_png[];
+static GRRLIB_texImg* s_logo = nullptr;
+static int            s_logoUsers = 0;
+
 /* Defined in LibraryView.cpp: decodes a JPEG into an RGBA8 texture. */
 GRRLIB_texImg* loadJPEGTexture(const u8* data, u32 size);
 
@@ -23,9 +28,9 @@ static const float SMALL_W   =  96.0f, SMALL_H = 144.0f;   /* the others    */
 static const float GAP       = 14.0f;
 static const float RADIUS    = 6.0f;
 
-/* the wordmark on the red band (Ui::headerBand), then the row's name in a
+/* the logo on the red band (Ui::headerBand), then the row's name in a
  * long bar under it, the Up/Down pill beside it */
-static const float WORD_X    = 24.0f, WORD_SIZE = 26;
+static const float WORD_X    = 18.0f, WORD_H = 36.0f;
 static const float BAR_Y     = 54.0f, BAR_H = 30.0f;
 static const float BAR_SIDE  = 20.0f;    /* from the screen edges            */
 static const float SWITCH_W  = 76.0f;    /* the ▼▲ pill                      */
@@ -76,6 +81,7 @@ CoverLine::CoverLine(JellyfinClient& c, const std::string& url, const JellyfinAu
     : client(c), serverUrl(url), auth(a)
 {
     LWP_MutexInit(&lock, false);
+    if (s_logoUsers++ == 0) s_logo = GRRLIB_LoadTexture(data_logo_wiifin_png);
 }
 
 CoverLine::~CoverLine()
@@ -83,6 +89,7 @@ CoverLine::~CoverLine()
     stopLoader();
     for (auto& r : rows) freeTextures(r);
     if (lock != LWP_MUTEX_NULL) LWP_MutexDestroy(lock);
+    if (--s_logoUsers == 0 && s_logo) { GRRLIB_FreeTexture(s_logo); s_logo = nullptr; }
 }
 
 void CoverLine::freeTextures(Row& r)
@@ -576,18 +583,13 @@ static void updown(float cx, float cy, int dir, float g, u32 col)
     Ui::triangle(cx - 10 * g, cy - s * 5 * g, cx + 10 * g, cy - s * 5 * g, cx, cy + s * 6 * g, col);
 }
 
-/* "WiiFlix" on the red band: white, a dark outline, drawn twice 1 px
- * apart for a bolder stroke */
+/* The logo on the red band, top left */
 static void wordmark()
 {
-    const char* word = "WiiFlix";
-    const float wx = Ui::screenLeft() + WORD_X, wy = (Ui::headerBand() - WORD_SIZE) * 0.5f - 1;
-    const u32 edge = 0x00000060;
-    for (int dy = -1; dy <= 1; ++dy)
-        for (int dx = -1; dx <= 2; ++dx)
-            if (dx || dy) Ui::text(wx + dx, wy + dy, word, WORD_SIZE, edge);
-    Ui::text(wx, wy, word, WORD_SIZE, 0xFFFFFFFF);
-    Ui::text(wx + 1, wy, word, WORD_SIZE, 0xFFFFFFFF);
+    if (!s_logo) return;
+    const float h = WORD_H, w = h * s_logo->w / s_logo->h * WiiUtils::wsScaleX();
+    GRRLIB_DrawImg(Ui::screenLeft() + WORD_X, (Ui::headerBand() - h) * 0.5f, s_logo, 0,
+                   w / s_logo->w, h / s_logo->h, 0xFFFFFFFF);
 }
 
 void CoverLine::drawTop()
