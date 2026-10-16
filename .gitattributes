@@ -1,0 +1,18 @@
+# The build runs in Linux (WSL, the CI's devkitPro container): files read
+# there keep LF line endings even in a Windows checkout (core.autocrlf),
+# where a CR breaks bash, make recipes and #! lines.
+*.sh      text eol=lf
+Makefile  text eol=lf
+*.py      text eol=lf
+*.po      text eol=lf
+*.pot     text eol=lf
+*.ld      text eol=lf
+
+# Never converted
+*.a       binary
+*.bin     binary
+*.wad     binary
+*.png     binary
+*.jpg     binary
+*.mp3     binary
+*.ttf     binary
