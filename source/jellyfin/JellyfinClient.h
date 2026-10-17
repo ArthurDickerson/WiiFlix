@@ -25,13 +25,6 @@ struct JellyfinItem {
     int         childCount         = 0;    // Series: seasons
     int         recursiveItemCount = 0;    // Series: episodes
     std::string sortName;                  // what the list is sorted on ("matrix" for "The Matrix")
-    std::string extraType;                 // a special feature's: "Trailer", "Featurette"...
-};
-
-struct JellyfinSeason {
-    std::string id;
-    std::string name;
-    int         indexNumber = 0;
 };
 
 struct JellyfinEpisode {
@@ -41,6 +34,11 @@ struct JellyfinEpisode {
     int         seasonNumber = 0;
     long long   playbackPositionTicks = 0;
     bool        played = false;   // UserData.Played
+    /* for the show page's episode row (getSeriesEpisodes) */
+    long long   runtimeTicks = 0;
+    int         year = 0;          // ProductionYear
+    std::string officialRating;    // often empty: the series' then
+    std::string overview;
 };
 
 struct JellyfinPerson {
@@ -86,7 +84,6 @@ struct JellyfinItemDetail {
     long long   playbackPositionTicks = 0; // UserData.PlaybackPositionTicks
     bool        isFavorite            = false; // UserData.IsFavorite
     bool        played                = false; // UserData.Played
-    int         specialFeatures       = 0;     // its bonus videos (trailers included)
     std::string seriesId;      // Episode only: its series and season, for
     std::string seasonId;      //   next / previous wherever it was opened
     std::vector<std::string>    genres;          // up to 4
@@ -208,18 +205,6 @@ public:
                   int& totalCount,
                   const std::string& extra = "");
 
-    // Whether the user has the item among their favourites, and how many
-    // special features (trailers included) it has.
-    bool getIsFavorite(const std::string& serverUrl, const JellyfinAuth& auth,
-                       const std::string& itemId, bool& favorite, int* specials = nullptr);
-
-    // A film's or a series' special features: its local trailers, then the
-    // rest (featurettes, behind the scenes, deleted scenes...), each with
-    // its extraType.
-    bool getSpecialFeatures(const std::string& serverUrl, const JellyfinAuth& auth,
-                            const std::string& itemId, std::vector<JellyfinItem>& out);
-
-
     // Fetch raw image bytes for an item's primary thumbnail
     bool getItemImageBytes(const std::string& serverUrl,
                            const JellyfinAuth& auth,
@@ -329,12 +314,6 @@ public:
                        const std::string& itemId,
                        JellyfinItemDetail& out);
 
-    // Fetch seasons for a TV series
-    bool getSeasons(const std::string& serverUrl,
-                    const JellyfinAuth& auth,
-                    const std::string& seriesId,
-                    std::vector<JellyfinSeason>& out);
-
     // Fetch episodes for a season
     bool getEpisodes(const std::string& serverUrl,
                      const JellyfinAuth& auth,
@@ -347,15 +326,6 @@ public:
                            const JellyfinAuth& auth,
                            const std::string& seriesId,
                            std::vector<JellyfinEpisode>& out);
-
-    // Up to `limit` episodes in random order, shuffled by the server: the
-    // whole series, or one season when seasonId is not empty.
-    bool getShuffledEpisodes(const std::string& serverUrl,
-                             const JellyfinAuth& auth,
-                             const std::string& seriesId,
-                             const std::string& seasonId,
-                             int limit,
-                             std::vector<JellyfinEpisode>& out);
 
     /* the chapters of one file (a version is an item of its own) */
     bool getChapters(const std::string& serverUrl, const JellyfinAuth& auth,

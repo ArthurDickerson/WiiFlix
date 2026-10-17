@@ -186,13 +186,12 @@ bool LibraryView::updateTVSuggestions(ir_t& ir, bool aPressed) {
                     state = State::DetailLoad;
                 }
             } else {
-                // Recently added series → season list
+                // Recently added series → its show page
                 if (!tvRecentItems.empty() && tvSuggestRecSel < nr) {
                     currentSeriesId    = tvRecentItems[tvSuggestRecSel].id;
                     currentSeriesName  = tvRecentItems[tvSuggestRecSel].name;
-                    seasonsCallerState = State::TVSuggestionsReady;
-                    seasons.clear(); seasonSel = 0; seasonTop = 0;
-                    state = State::SeasonsLoad;
+                    showReturnState = State::TVSuggestionsReady;
+                    state = State::ShowLoad;
                 }
             }
         }

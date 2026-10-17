@@ -26,12 +26,15 @@ static const float PILL_W   = 104, PILL_H = 30, PILL_DX = 130;
 static const float SIDE_DX  = 50;                 /* |<< and >>| beside pause     */
 static const float BACK_R   = 30, BACK_CY = 46;   /* as the details page's */
 /* hoverButton: 0 |<<, 1 back 10 s (left arrow), 2 pause, 3 on 10 s (right
- * arrow), 4 >>|, then zoom and the back button */
-static const int   BTN_ZOOM = 5, BTN_EXIT = 6;
+ * arrow), 4 >>|, then zoom, the back button, audio and subtitles */
+static const int   BTN_ZOOM = 5, BTN_EXIT = 6, BTN_AUDIO = 7, BTN_SUBS = 8;
 static float arrowX(int dir) { return dir < 0 ? Ui::screenLeft() + ARROW_X : Ui::screenRight() - ARROW_X; }
 static float trackL() { return arrowX(-1) + ARROW_W * 0.5f + 20; }
 static float trackR() { return arrowX(+1) - ARROW_W * 0.5f - 20; }
 static float zoomCx() { return Ui::screenRight() - 48; }
+/* audio and subtitles: at the left end of the time row, opposite zoom */
+static float audioCx() { return Ui::screenLeft() + 48; }
+static float subsCx()  { return Ui::screenLeft() + 96; }
 static float backCx() { return Ui::screenRight() - 59; }
 static const int INTRO_X    = 466, INTRO_Y = 270, INTRO_W = 150, INTRO_H = 40;
 
@@ -303,6 +306,18 @@ void PlayerView::openPanel(Panel p)
     trackList.open(p == Panel::Audio ? tr("Audio track") : tr("Subtitles"), rows, current);
 }
 
+void PlayerView::openAudioList()
+{
+    if (ctx.audioStreams.size() > 1) openPanel(Panel::Audio);
+    else toast(tr("No other audio track"));
+}
+
+void PlayerView::openSubList()
+{
+    if (!ctx.subStreams.empty()) openPanel(Panel::Sub);
+    else toast(tr("No subtitles available"));
+}
+
 PlayerView::Action PlayerView::activatePanelRow(int row)
 {
     Panel p = panel;
@@ -339,6 +354,8 @@ void PlayerView::hitTest(const ir_t& ir)
     if (nearBox(ir, arrowX(+1), BAR_Y, ARROW_W * 0.5f + 8, ARROW_H * 0.5f + 4))  hoverButton = 3;
     if (hasNext && nearBox(ir, 320 + SIDE_DX, ROW_Y, 18, 20))                    hoverButton = 4;
     if (nearBox(ir, zoomCx(), ROW_Y, 22, 20))                                    hoverButton = BTN_ZOOM;
+    if (nearBox(ir, audioCx(), ROW_Y, 20, 20))                                   hoverButton = BTN_AUDIO;
+    if (nearBox(ir, subsCx(), ROW_Y, 20, 20))                                    hoverButton = BTN_SUBS;
     if (ir.valid) {
         const float dx = ir.x - backCx(), dy = ir.y - BACK_CY;
         if (dx * dx + dy * dy < (BACK_R + 4) * (BACK_R + 4)) hoverButton = BTN_EXIT;
@@ -464,6 +481,8 @@ PlayerView::Action PlayerView::update(u32 down, const ir_t& ir)
                 break;
             case BTN_ZOOM: toggleZoom(); break;
             case BTN_EXIT: act = Action::Back; break;
+            case BTN_AUDIO: openAudioList(); break;
+            case BTN_SUBS:  openSubList(); break;
             }
         } else {
             wii_player_pause_toggle();
@@ -499,14 +518,8 @@ PlayerView::Action PlayerView::update(u32 down, const ir_t& ir)
         if (hasPrev) act = Action::Prev; else toast(tr("No previous episode"));
     }
     if (down & Input::BTN_ZOOM) toggleZoom();   /* Classic ZL/ZR, GameCube Z */
-    if (down & WPAD_BUTTON_1) {
-        if (ctx.audioStreams.size() > 1) openPanel(Panel::Audio);
-        else toast(tr("No other audio track"));
-    }
-    if (down & WPAD_BUTTON_2) {
-        if (!ctx.subStreams.empty()) openPanel(Panel::Sub);
-        else toast(tr("No subtitles available"));
-    }
+    if (down & WPAD_BUTTON_1) openAudioList();
+    if (down & WPAD_BUTTON_2) openSubList();
     return act;
 }
 
@@ -743,6 +756,36 @@ void PlayerView::render(const ir_t& ir)
                 Ui::roundRect(cx - 9.5f * g, cy - 5.5f * g, 19 * g, 11 * g, 1.5f, c, c);
             else
                 Ui::roundRect(cx - 9.5f * g, cy - 3 * g, 19 * g, 6 * g, 1, c, c);
+        }
+        {
+            /* audio: a speaker and two waves; dimmed with one track only */
+            const bool on = hoverButton == BTN_AUDIO;
+            const u32 c = on ? hot : ctx.audioStreams.size() > 1 ? white : Ui::alpha(white, 0.4f);
+            const float cx = audioCx(), cy = ROW_Y, g = on ? Ui::HOVER_GROW : 1.0f;
+            Ui::roundRect(cx - 12 * g, cy - 4 * g, 6 * g, 8 * g, 1, c, c);
+            Ui::triangle(cx - 7 * g, cy - 4 * g, cx + 1 * g, cy - 10 * g, cx + 1 * g, cy + 10 * g, c);
+            Ui::triangle(cx - 7 * g, cy - 4 * g, cx + 1 * g, cy + 10 * g, cx - 7 * g, cy + 4 * g, c);
+            for (int k = 1; k <= 2; ++k) {   /* the waves: arcs of thin quads */
+                const float r0 = (3 + 4.5f * k) * g, r1 = r0 + 2.2f * g, a0 = -0.85f, step = 0.17f;
+                for (float a = a0; a < -a0 - 0.01f; a += step) {
+                    const float b = a + step;
+                    const float x0 = cx + 2 * g, ca = cosf(a), sa = sinf(a), cb = cosf(b), sb = sinf(b);
+                    Ui::triangle(x0 + r0 * ca, cy + r0 * sa, x0 + r1 * ca, cy + r1 * sa, x0 + r1 * cb, cy + r1 * sb, c);
+                    Ui::triangle(x0 + r0 * ca, cy + r0 * sa, x0 + r1 * cb, cy + r1 * sb, x0 + r0 * cb, cy + r0 * sb, c);
+                }
+            }
+        }
+        {
+            /* subtitles: a screen like zoom's with two lines of text at
+             * its bottom; dimmed without subtitles */
+            const bool on = hoverButton == BTN_SUBS;
+            const u32 c = on ? hot : !ctx.subStreams.empty() ? white : Ui::alpha(white, 0.4f);
+            const float cx = subsCx(), cy = ROW_Y, g = on ? Ui::HOVER_GROW : 1.0f;
+            Ui::roundBorder(cx - 13 * g, cy - 9 * g, 26 * g, 18 * g, 3, 2.0f, c);
+            Ui::roundRect(cx - 8 * g, cy - 1 * g, 5 * g, 2.5f * g, 1, c, c);
+            Ui::roundRect(cx - 1 * g, cy - 1 * g, 9 * g, 2.5f * g, 1, c, c);
+            Ui::roundRect(cx - 8 * g, cy + 3.5f * g, 10 * g, 2.5f * g, 1, c, c);
+            Ui::roundRect(cx + 4 * g, cy + 3.5f * g, 4 * g, 2.5f * g, 1, c, c);
         }
         Ui::popOffset();
     }

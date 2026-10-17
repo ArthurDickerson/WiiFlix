@@ -84,13 +84,10 @@ private:
         ItemsReady,   // show items list
         PostersLoad,  // blocking: load poster images for current page
         PostersReady, // show poster grid
-        SeasonsLoad,  // blocking: fetch seasons for a TV series
-        SeasonsReady, // show season list
-        EpisodesLoad, // blocking: fetch episodes for a season
-        EpisodesReady,// show episode list
+        ShowLoad,     // blocking: a series' show page (loadShow: its episodes, poster)
         DetailLoad,   // blocking: load full item metadata + large poster
         DetailReady,  // show item detail page
-        ResumePrompt, // ask Continue / Start Over when playbackPositionTicks > 0
+        EpisodePick,  // the show page's "Select another episode" row (LibraryEpisodes.cpp)
         CollectionsLoad,      // blocking: fetch BoxSet collections
         FavoritesLoad,        // blocking: fetch favourite movies
         MovieSuggestionsLoad, // blocking: fetch continue-watching + recently-added movies
@@ -104,8 +101,6 @@ private:
         SearchInput,          // virtual keyboard for search query
         SearchLoad,           // blocking: search API call
         SearchReady,          // show search results
-        SpecialsLoad,         // blocking: a film's or a series' special features
-        SpecialsReady,        // show them (LibrarySpecials.cpp)
         Error
     };
     State state = State::LibsInit;
@@ -196,7 +191,7 @@ private:
     bool               detailIsEpisode   = false; // true → use 16:9 thumbnail layout
     /* the page's picture is 16:9: an episode's, or a special feature's (a
      * trailer, a featurette...: Jellyfin draws them from the video) */
-    bool detailWideThumb() const { return detailIsEpisode || detailReturnState == State::SpecialsReady; }
+    bool detailWideThumb() const { return !showMode && detailIsEpisode; }
     std::vector<std::string> detailLines;    // pre-computed word-wrapped overview (built once)
     /* the whole overview, in a panel over the page (- or A on it) */
     static const int DETAIL_OV_LINES = 4, OV_PANEL_SIZE = 15, OV_PANEL_W = 500, OV_PANEL_ROWS = 13;
@@ -216,7 +211,7 @@ private:
      * (-1 Version, 0 Audio, 1 Subtitles) with its choice */
     int  detailFocus = 0;
     int  detailHover = -1;     /* the button under the pointer last frame */
-    int  resumeHover = -1;     /* the resume question's, likewise */
+    bool detailDpad  = false;  /* the D-pad moved the focus last */
     static const int TRACK_MENU_NONE = -2;
     int  trackMenu = TRACK_MENU_NONE;
     TrackList trackList;       /* its rows (ui/TrackList, the player's too) */
@@ -225,28 +220,36 @@ private:
     void selectVersion(int v); // its tracks in the audio / subtitle rows
     void selectDefaultTracks(int audioIndex, int subIndex);   // stream indexes, -1 none
     const std::string& detailSourceId() const;   // the version played
-    int resumeSel      = 0;  // 0 = Continue, 1 = Start Over (used in ResumePrompt state)
+
+    /* The show page: a series' details page, one episode chosen (the one
+     * in progress, else the next to watch): the series' name, poster,
+     * genres and queue; the episode's play buttons, overview and tracks.
+     * Opened for a series (SeasonsLoad: currentSeriesId, back to
+     * showReturnState) or one of its episodes (showStartEpisodeId). */
+    bool showMode = false;
+    JellyfinItemDetail           showSeries;   // name, genres, rating, in the queue
+    GRRLIB_texImg*               showTex = nullptr;   // the series' poster
+    std::vector<JellyfinEpisode> showEps;      // every episode in order, no specials
+    int         showEpIdx = 0;                 // the one shown
+    std::string showStartEpisodeId;            // the one to show first, if any
+    void loadShow();
+    void openShow(const std::string& seriesId, const std::string& seriesName,
+                  const std::string& episodeId, State returnState);
+    void leaveDetail();                        // back from the details page
+    /* the episode row (LibraryEpisodes.cpp): the choice, the first tile
+     * shown (and its smooth position), the pointer's tile / arrow last
+     * frame, the overview wrapped for the choice */
+    int   epSel = 0, epFirst = 0, epHover = -1;
+    float epScroll = 0.0f;
+    bool  epDpad = false;
+    int   epLinesFor = -1;
+    std::vector<std::string> epLines;
+    bool updateEpisodePick(ir_t& ir, bool aPressed);
+    void renderEpisodePick(ir_t& ir);
 
     // TV show navigation
     std::string currentSeriesId;
     std::string currentSeriesName;
-    std::vector<JellyfinSeason>  seasons;
-    int seasonSel = 0;
-    int seasonTop = 0;
-    /* the seasons' posters (Posters and List + Posters views): seasonTex[i]
-     * for seasons[i], the first SEASON_TEX_MAX; the series' poster for the
-     * others, those without one and the Special Features tile */
-    std::vector<GRRLIB_texImg*> seasonTex;
-    GRRLIB_texImg* seriesPosterTex = nullptr;
-    static const int SEASON_TEX_MAX = 20;
-    bool seasonGrid() const;
-    GRRLIB_texImg* seasonPoster(int i) const;
-    void freeSeasonPosters();
-    std::string currentSeasonId;
-    std::string currentSeasonName;
-    std::vector<JellyfinEpisode> episodes;
-    int episodeSel = 0;
-    int episodeTop = 0;
 
     // Continue Watching / Next Up (activity page)
     std::vector<JellyfinItem> continueItems;
@@ -277,7 +280,7 @@ private:
     // TV show tabs (only active when currentLibType == "tvshows")
     int         tvTab   = 0;    // 0=Series, 1=Suggestions, 2=Upcoming
     std::string tvLibId;         // root tvshows library id
-    State       seasonsCallerState = State::PostersReady; // where B goes from season list
+    State       showReturnState = State::PostersReady; // where B goes from the show page
 
     // Movie suggestions tab data
     std::vector<JellyfinItem> movieContItems;          // continue-watching movies (up to 4)
@@ -322,13 +325,10 @@ private:
     void loadItems();
     void loadPosters();
     void loadDetail();
-    void preparePlay(long long startTicks, const std::vector<JellyfinEpisode>* queue = nullptr);
-    bool startShuffle(const std::string& seasonId);   /* "" = whole series */
+    void preparePlay(long long startTicks);
     /* a film or series library's list (List views): its tab's titles */
     std::string listFilter() const;
     bool tabbedList() const;   /* that list shows the library's tabs */
-    void loadSeasons();
-    void loadEpisodes();
     void loadMovieCollections();
     void loadMovieFavorites();
     void loadGlobalFavorites();
@@ -344,8 +344,6 @@ private:
     void drawCursor(ir_t& ir);
     void drawDetailView(ir_t& ir);
     void clampScroll();
-    void clampSeasonScroll();
-    void clampEpisodeScroll();
 
     // Search
     std::string               searchQuery;
@@ -387,25 +385,6 @@ private:
     bool        sortPanel = false;
     int         sortRow   = 0;          // 0 sort, 1 genre, 2 show
     ListSort    sortEdit;               // the panel's choice, until A
-    bool        seriesFavorite = false; // the open series (1 on its seasons)
-    int         seriesSpecials = 0;     // its special features (a "season" row)
-
-    // Special features (LibrarySpecials.cpp): of a film (2 on its page) or
-    // a series (the last row of its seasons)
-    std::vector<JellyfinItem> specials;
-    std::vector<std::string>  specialsTypes;   // their kinds, in list order
-    std::string specialsOfId, specialsOfName;  // the film / series
-    State       specialsBack       = State::DetailReady;   // the film page, or the seasons
-    State       specialsFilmReturn = State::ItemsReady;    // the film page's own way back
-    int         specialsSel = 0, specialsTop = 0;
-    int         specialsGroup = -1;    // folders: -1 the kinds, else the kind shown
-    bool        specialsFolders() const;   // many of several kinds: a folder per kind
-    void        openSpecials(const std::string& id, const std::string& name, State back);
-    void        loadSpecials();
-    bool        updateSpecials(ir_t& ir, bool aPressed);
-    void        renderSpecials(ir_t& ir);
-    std::vector<int> specialsShown() const;   // indexes of the rows (items or kinds)
-    static const char* const SPECIALS_ROW;    // the seasons' "Special Features" row id
     /* 1: the item a favourite or not any more, on the server */
     void        toggleFavorite(const std::string& id, bool& favorite);
     /* +: watched or not any more (the home rows follow: next up...) */
@@ -416,7 +395,6 @@ private:
     void        openSortPanel();
     void        updateSortPanel();
     void        renderSortPanel();
-    bool       episodesFromHome = false; // season opened from the carousel home
     bool flixHome() const;
     /* The interface sounds: what is highlighted, which page or tab is
      * shown (compared before and after each frame's input) */
@@ -445,10 +423,6 @@ private:
     bool updatePosterGrid(ir_t& ir, bool aPressed);
     void renderPosterGrid(ir_t& ir);
     // LibraryShows.cpp
-    bool updateSeasons(ir_t& ir, bool aPressed);
-    void renderSeasons(ir_t& ir);
-    bool updateEpisodes(ir_t& ir, bool aPressed);
-    void renderEpisodes(ir_t& ir);
     // LibrarySuggestions.cpp
     static const int SG_X0  = 15;        // suggestion rows: first card
     static const int SG_CW  = POSTER_W;  // card width (130)
@@ -467,8 +441,6 @@ private:
     void renderTVUpcoming(ir_t& ir);
     // LibraryDetail.cpp (and drawDetailView)
     bool updateDetail(ir_t& ir, bool aPressed);
-    bool updateResumePrompt(ir_t& ir, bool aPressed);
-    void renderResumePrompt();
     // LibrarySearch.cpp (and the search members above)
     bool updateSearchInput(ir_t& ir);
     bool updateSearchResults(ir_t& ir, bool aPressed);

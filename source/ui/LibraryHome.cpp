@@ -247,9 +247,8 @@ bool LibraryView::updateGlobalFavorites(ir_t& ir, bool aPressed) {
             if (items[posterSel].type == "Series") {
                 currentSeriesId    = items[posterSel].id;
                 currentSeriesName  = items[posterSel].name;
-                seasonsCallerState = State::GlobalFavoritesReady;
-                seasons.clear(); seasonSel = 0; seasonTop = 0;
-                state = State::SeasonsLoad;
+                showReturnState = State::GlobalFavoritesReady;
+                state = State::ShowLoad;
             } else {
                 detailItemId      = items[posterSel].id;
                 detailReturnState = State::GlobalFavoritesReady;

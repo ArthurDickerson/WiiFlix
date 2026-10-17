@@ -12,7 +12,8 @@ Written in C++ with [GRRLIB](https://github.com/GRRLIB/GRRLIB) and [MPlayer CE](
 ## ✨ Features
 
 - **A line of covers, one row at a time**: Continue Watching, your **Instant Queue** (the titles you favorited in Jellyfin), then a row for every genre of your movies and TV shows. Point at a cover to enlarge it, click to open it; click the row's name to jump to any row from a list.
-- **Details page**: Play, Add to Queue, star rating, age rating, year and running time, the overview, cast, director and genres; audio and subtitle tracks (and versions) picked from a list.
+- **Details page**: Resume or Play, Play from beginning, Add to Queue, star rating, age rating, year and running time, the overview, cast, director and genres; a Subtitle | Audio button picks the tracks (and versions) from a list.
+- **TV shows** open on the episode you are watching (or the next one), with **Select another episode**: every episode of the series in one long row, the ones started with a red bar.
 - **Player**: a scrub bar with the server's thumbnails, ±10 s steps, resume where you stopped, skip intro / recap / credits, next and previous episode, audio and subtitle tracks, picture zoom.
 - **Direct play** of what the Wii can decode (SD DivX/Xvid, H.264 up to 480p, MPEG-1/2, VP8); the server converts the rest. See [DIRECT_PLAY.md](DIRECT_PLAY.md).
 - **Sign in** with your username and password, with **Quick Connect**, or by finding the server on your network. Several **profiles** (accounts and servers).
@@ -51,13 +52,20 @@ With the Wii Remote: point and press **A** on anything on the screen, or use the
 
 | Button | Action |
 |---|---|
-| D-pad | Move between Play, Add to Queue, the track buttons and the back button |
+| D-pad | Move between the buttons, the Subtitle \| Audio button and the back button |
 | **A** | Press the button in focus |
 | **B** | Back |
-| **1** | Add to / remove from your queue |
 | **+** | Mark watched / not watched |
-| **2** | Extras (trailers, featurettes…), when there are some |
 | **−** | Read the whole overview |
+
+**Select another episode**
+
+| Button | Action |
+|---|---|
+| D-pad Left / Right | Previous / next episode |
+| **−** / **+** | A screenful of episodes back / on |
+| **A** | Show that episode on the show's page |
+| **B** | Back |
 
 **Player**
 
@@ -69,7 +77,7 @@ With the Wii Remote: point and press **A** on anything on the screen, or use the
 | **−** / **+** | Previous / next episode |
 | **1** / **2** | Audio track / subtitles |
 | **B** | Back to the details page |
-| Pointer | Click the bar to jump there; the arrows step 10 s |
+| Pointer | Click the bar to jump there; the arrows step 10 s; the speaker and caption buttons (bottom left) pick the audio track and subtitles, the screen (bottom right) zooms |
 
 **HOME** opens the Wii's HOME Menu anywhere.
 

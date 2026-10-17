@@ -1,5 +1,6 @@
 #include "TrackList.h"
 #include "Ui.h"
+#include "../input/Input.h"
 
 #include <math.h>
 
@@ -11,6 +12,10 @@ static const float HEAD_H   = 46;              /* title and ✕ above the rows *
 static const float ROW_STEP = 34, ROW_H = 30, PAD = 14;
 static const float BTN_R    = 3;               /* the rectangular buttons' corners */
 static const float CLOSE_A  = 7;               /* the ✕'s half size */
+static const float KNOB_R   = 10;              /* the scroll bar's knob */
+/* room the scroll bar takes: the knob against the panel's padding, clear
+ * of the rows by 20 px (8 when both are grown) */
+static const float BAR_W    = 2 * KNOB_R + 20;
 
 /* A stroke of thickness t from (x0, y0) to (x1, y1). */
 static void stroke(float x0, float y0, float x1, float y1, float t, u32 c)
@@ -46,6 +51,7 @@ void TrackList::open(const std::string& t, const std::vector<std::string>& rows,
     hover    = -2;        /* the pointer's first row counts as a move */
     dpad     = false;
     closeHot = false;
+    knobHot  = trackHot = dragging = false;
 }
 
 int TrackList::shownRows() const
@@ -62,6 +68,37 @@ void TrackList::box(float& x, float& y, float& w, float& h) const
     y = 240 - h * 0.5f;
 }
 
+void TrackList::trackSpan(float& tx, float& t0, float& t1) const
+{
+    float x, y, w, h;
+    box(x, y, w, h);
+    tx = x + w - PAD - KNOB_R;
+    t0 = y + HEAD_H + KNOB_R;
+    t1 = y + HEAD_H + shownRows() * ROW_STEP - (ROW_STEP - ROW_H) - KNOB_R;
+}
+
+float TrackList::knobY() const
+{
+    float tx, t0, t1;
+    trackSpan(tx, t0, t1);
+    const int maxTop = (int)labels.size() - shownRows();
+    return maxTop > 0 ? t0 + (t1 - t0) * top / maxTop : t0;
+}
+
+void TrackList::scrollTo(float ky)
+{
+    float tx, t0, t1;
+    trackSpan(tx, t0, t1);
+    const int maxTop = (int)labels.size() - shownRows();
+    float f = t1 > t0 ? (ky - t0) / (t1 - t0) : 0.0f;
+    if (f < 0.0f) f = 0.0f;
+    if (f > 1.0f) f = 1.0f;
+    top = (int)(f * maxTop + 0.5f);
+    /* the choice stays in sight */
+    if (sel < top) sel = top;
+    if (sel >= top + ROWS) sel = top + ROWS - 1;
+}
+
 TrackList::Result TrackList::update(const ir_t& ir, bool up, bool down, bool a, bool b)
 {
     if (!shown) return Result::None;
@@ -69,17 +106,33 @@ TrackList::Result TrackList::update(const ir_t& ir, bool up, bool down, bool a, 
     float x, y, w, h;
     box(x, y, w, h);
 
+    /* the knob held: it follows the pointer while A stays down */
+    if (dragging) {
+        if (!(Input::held() & WPAD_BUTTON_A) || !ir.valid) dragging = false;
+        else { scrollTo(ir.y - dragGrab); return Result::None; }
+    }
+
     int over = -1;
-    closeHot = false;
+    closeHot = knobHot = trackHot = false;
+    const float rowsR = x + w - PAD - (scrolls() ? BAR_W : 0);
     if (ir.valid) {
         for (int i = 0; i < shownRows(); ++i) {
             const float ry = y + HEAD_H + i * ROW_STEP;
-            if (ir.x >= x + PAD && ir.x < x + w - PAD && ir.y >= ry && ir.y < ry + ROW_H)
+            if (ir.x >= x + PAD && ir.x < rowsR && ir.y >= ry && ir.y < ry + ROW_H)
                 over = top + i;
         }
         const float cx = x + w - 26, cy = y + HEAD_H * 0.5f;
         closeHot = fabsf(ir.x - cx) < 16 && fabsf(ir.y - cy) < 16;
+        if (scrolls()) {
+            float tx, t0, t1;
+            trackSpan(tx, t0, t1);
+            if (fabsf(ir.x - tx) < KNOB_R + 6 && fabsf(ir.y - knobY()) < KNOB_R + 6) knobHot = true;
+            else if (fabsf(ir.x - tx) < 10 && ir.y >= t0 - KNOB_R && ir.y <= t1 + KNOB_R) trackHot = true;
+        }
     }
+    /* A on the knob grabs it; on the track, the knob jumps there */
+    if (a && knobHot)  { dragging = true; dragGrab = ir.y - knobY(); return Result::None; }
+    if (a && trackHot) { dragging = true; dragGrab = 0.0f; scrollTo(ir.y); return Result::None; }
     /* one choice: the pointer takes it when it moves onto another row, the
      * D-pad moves it too, even with the pointer on the screen */
     if (over >= 0 && over != hover) { sel = over; dpad = false; }
@@ -105,7 +158,6 @@ void TrackList::draw() const
 {
     if (!shown) return;
     const Ui::Palette& p = Ui::pal();
-    const int n = (int)labels.size();
     float x, y, w, h;
     box(x, y, w, h);
 
@@ -128,7 +180,7 @@ void TrackList::draw() const
     }
 
     /* the rows: rectangular buttons, the choice orange; ✓ the one in use */
-    const float sbw = n > ROWS ? 12 : 0;   /* room for the scrollbar */
+    const float sbw = scrolls() ? BAR_W : 0;   /* room for the scroll bar */
     for (int i = 0; i < shownRows(); ++i) {
         const int k = top + i;
         const float rx = x + PAD, ry = y + HEAD_H + i * ROW_STEP, rw = w - 2 * PAD - sbw;
@@ -140,6 +192,22 @@ void TrackList::draw() const
         if (k == current)
             Ui::textRight(rx + rw - 12, ry + 6, "\xe2\x9c\x93", 16, on ? c : p.ok);
     }
-    if (n > ROWS)
-        Ui::scrollbar(x + w - PAD - 6, y + HEAD_H, ROWS * ROW_STEP - (ROW_STEP - ROW_H), top, ROWS, n);
+    /* the scroll bar: the home page's, standing up; a thin track and a
+     * white knob, orange and a little bigger under the pointer */
+    if (scrolls()) {
+        float tx, t0, t1;
+        trackSpan(tx, t0, t1);
+        const float th = trackHot || dragging ? 5.0f : 3.0f;
+        Ui::roundRect(tx - th * 0.5f, t0 - KNOB_R, th, t1 - t0 + 2 * KNOB_R, th * 0.5f, p.fieldBorder);
+        const bool hot = knobHot || dragging;
+        const float ky = knobY(), r = hot ? KNOB_R * Ui::HOVER_GROW : KNOB_R;
+        Ui::shadow(tx - r, ky - r + 2, r * 2, r * 2, r, 4.0f, p.shadow);
+        if (hot) {
+            Ui::roundRect(tx - r, ky - r, r * 2, r * 2, r, Ui::HOVER_TOP, Ui::HOVER_BOTTOM);
+            Ui::roundBorder(tx - r, ky - r, r * 2, r * 2, r, 1.5f, Ui::HOVER_EDGE);
+        } else {
+            Ui::circle(tx, ky, r, 0xFFFFFFFF);
+            Ui::roundBorder(tx - r, ky - r, r * 2, r * 2, r, 1.5f, 0xA0A6B0FF);
+        }
+    }
 }

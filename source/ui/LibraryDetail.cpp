@@ -1,4 +1,4 @@
-/* LibraryView: Item detail page and the resume prompt. */
+/* LibraryView: the details page (a film's, an episode's, a show's). */
 #include "LibraryView.h"
 #include "LibraryDraw.h"
 #include "Ui.h"
@@ -12,7 +12,12 @@
 
 using namespace LibDraw;
 
-/* ---- The title page's layout (drawn and hit-tested alike) ---------- */
+/* ---- The page's layout (drawn and hit-tested alike) --------------------
+ * The channel's: the title under the band, a small poster with four
+ * buttons beside it in two rows (Resume or Play | Play from beginning,
+ * Add to Queue | Select another episode), then a line of stars, rating,
+ * year and length with the Subtitle | Audio pill at its end, the overview,
+ * Cast / Director / genres. */
 namespace {
 
 const float MARGIN = 24;
@@ -22,9 +27,8 @@ float backCx() { return Ui::screenRight() - 59; }
 
 struct DetailLayout {
     float px, py, pw, ph;          /* poster (pw before the 16:9 widening) */
-    float bx, bw;                  /* the two buttons' column              */
-    float playY, playH, favY, favH;
-    float rowsX, rowsW;            /* Version / Audio / Subtitles / Scenes */
+    float c1x, c2x, cw;            /* the buttons' two columns            */
+    float r1y, r2y, bh;            /* and two rows                        */
 };
 
 DetailLayout detailLayout(bool wide)
@@ -32,13 +36,15 @@ DetailLayout detailLayout(bool wide)
     DetailLayout L;
     L.px = MARGIN; L.py = 96;
     L.pw = wide ? 128 : 84;  L.ph = wide ? 72 : 124;
-    L.bx = L.px + L.pw * WiiUtils::wsScaleX() + 16;
-    L.bw = 344 - L.bx;
-    L.playY = 100; L.playH = 40;
-    L.favY  = 150; L.favH  = 32;
-    L.rowsX = 362; L.rowsW = 640 - MARGIN - L.rowsX;
+    const float GAP = 14;
+    L.c1x = L.px + L.pw * WiiUtils::wsScaleX() + 16;
+    L.cw  = (640 - MARGIN - L.c1x - GAP) * 0.5f;
+    L.c2x = L.c1x + L.cw + GAP;
+    L.r1y = 100; L.r2y = 160; L.bh = 46;
     return L;
 }
+const float INFO_Y = 236;                 /* stars, rating, year, length */
+const float PILL_H = 26, PILL_Y = INFO_Y + 9 - PILL_H * 0.5f;
 
 bool inBox(const ir_t& ir, float x, float y, float w, float h)
 {
@@ -52,27 +58,31 @@ bool overBack(const ir_t& ir)
     return dx * dx + dy * dy < (BACK_R + 4) * (BACK_R + 4);
 }
 
-/* the track rows there are, top down: -1 Version, 0 Audio, 1 Subtitles;
- * row i's box */
-std::vector<int> trackRows(const JellyfinItemDetail& d)
+/* The Version | Subtitle | Audio pill: the parts there are (-1 Version,
+ * 1 Subtitles, 0 Audio), right-aligned at the line's end */
+struct PillPart { int which; float x, w; const char* label; };
+std::vector<PillPart> pillParts(const JellyfinItemDetail& d)
 {
-    std::vector<int> rows;
-    if (!d.versions.empty())        rows.push_back(-1);
-    if (!d.audioStreams.empty())    rows.push_back(0);
-    if (!d.subtitleStreams.empty()) rows.push_back(1);
-    return rows;
+    std::vector<PillPart> parts;
+    if (!d.versions.empty())        parts.push_back({ -1, 0, 0, N_("Version") });
+    if (!d.subtitleStreams.empty()) parts.push_back({  1, 0, 0, N_("Subtitle") });
+    if (!d.audioStreams.empty())    parts.push_back({  0, 0, 0, N_("Audio") });
+    float x = 640 - MARGIN;
+    for (int i = (int)parts.size() - 1; i >= 0; --i) {
+        parts[i].w = Ui::textWidth(tr(parts[i].label), 15) + 26;
+        x -= parts[i].w;
+        parts[i].x = x;
+    }
+    return parts;
 }
-const float ROW_STEP = 26, ROW_H = 22;
-void rowBox(const DetailLayout& L, int i, float& x, float& y, float& w, float& h)
-{
-    x = L.rowsX - 6; y = L.playY + i * ROW_STEP; w = L.rowsW + 6; h = ROW_H;
-}
+
 /* the rectangular buttons' corners */
 const float BTN_R = 3;
 
-/* what the D-pad can be on (LibraryView::detailFocus): Play, Add to Queue,
- * the back button, Read more (an overview cut short), track row F_ROW + i */
-const int F_PLAY = 0, F_QUEUE = 1, F_BACK = 2, F_MORE = 3, F_ROW = 10;
+/* what the D-pad can be on (LibraryView::detailFocus): Resume / Play, Add
+ * to Queue, the back button, Read more (an overview cut short), Play from
+ * beginning, Select another episode, the pill's part F_PILL + i */
+const int F_PLAY = 0, F_QUEUE = 1, F_BACK = 2, F_MORE = 3, F_START = 4, F_EPS = 5, F_PILL = 10;
 
 /* Validate UTF-8 and truncate at a safe codepoint boundary so the
  * renderer never receives a broken multi-byte sequence. */
@@ -120,7 +130,10 @@ bool LibraryView::updateDetail(ir_t& ir, bool aPressed) {
         return false;
     }
     const DetailLayout L = detailLayout(detailWideThumb());
-    const std::vector<int> rows = trackRows(detail);
+    const std::vector<PillPart> parts = pillParts(detail);
+    const int nParts = (int)parts.size();
+    const bool hasStart = detail.playbackPositionTicks > 0 && !detail.played;   /* Play from beginning */
+    const bool hasEps   = showMode;                                             /* Select another episode */
 
     /* a track's list open (ui/TrackList): it takes the input */
     if (trackMenu != TRACK_MENU_NONE) {
@@ -150,18 +163,22 @@ bool LibraryView::updateDetail(ir_t& ir, bool aPressed) {
      * the screen or not. */
     int hover = -1;
     if (ir.valid) {
-        if (overBack(ir))                                 hover = F_BACK;
-        else if (inBox(ir, L.bx, L.playY, L.bw, L.playH)) hover = F_PLAY;
+        if (overBack(ir))                                         hover = F_BACK;
+        else if (inBox(ir, L.c1x, L.r1y, L.cw, L.bh))             hover = F_PLAY;
+        else if (hasStart && inBox(ir, L.c2x, L.r1y, L.cw, L.bh)) hover = F_START;
+        else if (inBox(ir, L.c1x, L.r2y, L.cw, L.bh))             hover = F_QUEUE;
+        else if (hasEps && inBox(ir, L.c2x, L.r2y, L.cw, L.bh))   hover = F_EPS;
         else if (overviewCut && inBox(ir, moreX, moreY, moreW, moreH)) hover = F_MORE;
-        else if (inBox(ir, L.bx, L.favY, L.bw, L.favH))   hover = F_QUEUE;
-        for (int i = 0; i < (int)rows.size(); ++i) {
-            float x, y, w, h;
-            rowBox(L, i, x, y, w, h);
-            if (inBox(ir, x, y, w, h)) hover = F_ROW + i;
-        }
+        for (int i = 0; i < nParts; ++i)
+            if (inBox(ir, parts[i].x, PILL_Y, parts[i].w, PILL_H)) hover = F_PILL + i;
     }
-    if (hover >= 0 && hover != detailHover) detailFocus = hover;
+    if (hover >= 0 && hover != detailHover) { detailFocus = hover; detailDpad = false; }
     detailHover = hover;
+    /* the buttons there are changed (a track list, a film without a resume
+     * point): back to Play */
+    if ((detailFocus == F_START && !hasStart) || (detailFocus == F_EPS && !hasEps) ||
+        (detailFocus == F_MORE && !overviewCut) || detailFocus >= F_PILL + nParts)
+        detailFocus = F_PLAY;
     const int target = detailFocus;
 
     /* -, or A with the pointer on it: the overview the page cuts short */
@@ -173,85 +190,97 @@ bool LibraryView::updateDetail(ir_t& ir, bool aPressed) {
         overviewTop = 0;
         return false;
     }
+    /* A with the pointer off the buttons (on the cover, say) does nothing,
+     * unless the D-pad moved the focus last */
+    if (aPressed && ir.valid && hover < 0 && !detailDpad) aPressed = false;
 
-    if (aPressed && target == F_BACK) {
-        freeDetail();
-        state = detailReturnState;
+    if ((aPressed && target == F_BACK) || Input::isBackPressed()) {
+        leaveDetail();
         return false;
     }
     if (aPressed && target == F_QUEUE) {
-        toggleFavorite(detailItemId, detail.isFavorite);
+        /* a show: the series goes in the queue */
+        if (showMode) toggleFavorite(currentSeriesId, showSeries.isFavorite);
+        else          toggleFavorite(detailItemId, detail.isFavorite);
         return false;
     }
-    if (aPressed && target >= F_ROW && target - F_ROW < (int)rows.size()) {
-        openTrackMenu(rows[target - F_ROW]);
+    if (aPressed && target >= F_PILL && target - F_PILL < nParts) {
+        openTrackMenu(parts[target - F_PILL].which);
         return false;
     }
-    // A: play
+    if (aPressed && target == F_EPS) {
+        SoundFX::play(SoundFX::FX::Open);
+        epSel      = showEpIdx;
+        epFirst    = epSel > 2 ? epSel - 2 : 0;
+        epScroll   = (float)epFirst;
+        epHover    = -1;
+        epDpad     = false;
+        epLinesFor = -1;
+        state = State::EpisodePick;
+        return false;
+    }
+    /* Resume (where it stopped) or Play; Play from beginning */
     if (aPressed && target == F_PLAY) {
-        if (detail.playbackPositionTicks > 0) {
-            // There is a saved position — ask the user Continue / Start Over
-            resumeSel = 0;
-            resumeHover = -1;
-            state = State::ResumePrompt;
-            return false;
-        }
-        // No saved position: play from the beginning immediately
+        preparePlay(hasStart ? detail.playbackPositionTicks : 0LL);
+        return true;
+    }
+    if (aPressed && target == F_START) {
         preparePlay(0LL);
         return true;
     }
-    if (Input::is1Pressed()) toggleFavorite(detailItemId, detail.isFavorite);
     if (Input::isActionPressed()) {   /* +: watched; that drops the resume point */
         togglePlayed(detailItemId, detail.played);
         if (detail.played) detail.playbackPositionTicks = 0;
-        for (auto& e : episodes)   /* the episode list shown on B */
-            if (e.id == detailItemId) {
-                e.played = detail.played;
-                if (e.played) e.playbackPositionTicks = 0;
-            }
-    }
-    if (Input::is2Pressed() && detail.specialFeatures > 0) {
-        specialsFilmReturn = detailReturnState;
-        openSpecials(detailItemId, detail.name, State::DetailReady);
-        return false;
-    }
-    if (Input::isBackPressed()) {
-        freeDetail();
-        state = detailReturnState;
-        return false;
+        if (showMode && showEpIdx < (int)showEps.size()) {   /* the episode row's */
+            showEps[showEpIdx].played = detail.played;
+            if (detail.played) showEps[showEpIdx].playbackPositionTicks = 0;
+        }
     }
 
-    /* the D-pad walks the buttons: Play and Add to Queue on the left, the
-     * tracks on the right, the back button above them */
-    const int nRows = (int)rows.size();
+    /* the D-pad walks the buttons: two rows of two beside the poster, the
+     * pill under the right-hand ones, Read more under it, the back button
+     * above */
     const int was = detailFocus;
-    if (detailFocus >= F_ROW + nRows) detailFocus = F_PLAY;   /* the tracks changed */
-    const bool row = detailFocus >= F_ROW;
-    const int  r   = detailFocus - F_ROW;
-    if (detailFocus == F_MORE && !overviewCut) detailFocus = F_QUEUE;
+    const int pi = detailFocus >= F_PILL ? detailFocus - F_PILL : -1;   /* the pill's part */
+    const int pillFirst = nParts ? F_PILL : -1, pillLast = nParts ? F_PILL + nParts - 1 : -1;
+    auto set = [&](int f) { if (f >= 0) detailFocus = f; };
     if (Input::isUpPressed()) {
-        if (detailFocus == F_MORE)       detailFocus = F_QUEUE;
-        else if (detailFocus == F_QUEUE) detailFocus = F_PLAY;
-        else if (detailFocus == F_PLAY)  detailFocus = F_BACK;
-        else if (row)                    detailFocus = r > 0 ? detailFocus - 1 : F_BACK;
+        switch (detailFocus) {
+        case F_PLAY: case F_START: set(F_BACK); break;
+        case F_QUEUE: set(F_PLAY); break;
+        case F_EPS:   set(hasStart ? F_START : F_PLAY); break;
+        case F_MORE:  set(nParts ? pillLast : F_QUEUE); break;
+        default: if (pi >= 0) set(hasEps ? F_EPS : F_QUEUE); break;
+        }
     } else if (Input::isDownPressed()) {
-        if (detailFocus == F_BACK)       detailFocus = nRows ? F_ROW : F_PLAY;
-        else if (detailFocus == F_PLAY)  detailFocus = F_QUEUE;
-        else if (detailFocus == F_QUEUE && overviewCut) detailFocus = F_MORE;
-        else if (row && r + 1 < nRows)   detailFocus = detailFocus + 1;
-        else if (row && overviewCut)     detailFocus = F_MORE;
+        switch (detailFocus) {
+        case F_BACK:  set(hasStart ? F_START : F_PLAY); break;
+        case F_PLAY:  set(F_QUEUE); break;
+        case F_START: set(hasEps ? F_EPS : (nParts ? pillLast : F_QUEUE)); break;
+        case F_QUEUE: case F_EPS:
+            if (nParts) set(pillLast); else if (overviewCut) set(F_MORE);
+            break;
+        default: if (pi >= 0 && overviewCut) set(F_MORE); break;
+        }
     } else if (Input::isRightPressed()) {
-        if (detailFocus == F_PLAY && nRows)  detailFocus = F_ROW;
-        if (detailFocus == F_QUEUE && nRows) detailFocus = F_ROW + (nRows > 1 ? 1 : 0);
+        switch (detailFocus) {
+        case F_PLAY:  if (hasStart) set(F_START); break;
+        case F_QUEUE: if (hasEps) set(F_EPS); else set(pillFirst); break;
+        default: if (pi >= 0 && pi + 1 < nParts) set(detailFocus + 1); break;
+        }
     } else if (Input::isLeftPressed()) {
-        if (row)                         detailFocus = r == 0 ? F_PLAY : F_QUEUE;
-        else if (detailFocus == F_BACK)  detailFocus = F_PLAY;
+        switch (detailFocus) {
+        case F_START: set(F_PLAY); break;
+        case F_EPS:   set(F_QUEUE); break;
+        case F_BACK:  set(hasStart ? F_START : F_PLAY); break;
+        default: if (pi > 0) set(detailFocus - 1); else if (pi == 0) set(hasEps ? F_EPS : F_QUEUE); break;
+        }
     }
-    if (detailFocus != was) SoundFX::play(SoundFX::FX::Move);
+    if (detailFocus != was) { SoundFX::play(SoundFX::FX::Move); detailDpad = true; }
     return false;
 }
 
-/* A on a track's button: its list, the current one chosen */
+/* A on a part of the pill: its list, the current one chosen */
 void LibraryView::openTrackMenu(int which) {
     trackMenu = which;
     std::vector<std::string> rows;
@@ -269,152 +298,68 @@ void LibraryView::openTrackMenu(int which) {
     SoundFX::play(SoundFX::FX::Open);
 }
 
-/* The resume question's layout (drawn and hit-tested alike) */
-namespace {
-const int RP_W = 340, RP_H = 120;
-const int RP_X = (640 - RP_W) / 2, RP_Y = (480 - RP_H) / 2;
-const int RP_BW = 130, RP_BH = 32, RP_GAP = 16;
-const int RP_BX = RP_X + (RP_W - (RP_BW * 2 + RP_GAP)) / 2;
-const int RP_BY = RP_Y + RP_H - RP_BH - 18;
-int rpButtonX(int i) { return RP_BX + i * (RP_BW + RP_GAP); }
-}  // namespace
-
-/* Continue / From Start: one choice, lit, which A takes.  The pointer
- * moves it onto the button it comes onto, the D-pad (Left / Right) moves
- * it whether the pointer is on the screen or not; B goes back to the
- * page. */
-bool LibraryView::updateResumePrompt(ir_t& ir, bool aPressed) {
-    int hover = -1;
-    if (ir.valid)
-        for (int i = 0; i < 2; ++i)
-            if (ir.x >= rpButtonX(i) && ir.x < rpButtonX(i) + RP_BW && ir.y >= RP_BY && ir.y < RP_BY + RP_BH)
-                hover = i;
-    if (hover >= 0 && hover != resumeHover) resumeSel = hover;
-    resumeHover = hover;
-    const int was = resumeSel;
-    if (Input::isLeftPressed())  resumeSel = 0;
-    if (Input::isRightPressed()) resumeSel = 1;
-    if (resumeSel != was) SoundFX::play(SoundFX::FX::Move);
-    if (Input::isBackPressed()) {
-        SoundFX::play(SoundFX::FX::Back);
-        state = State::DetailReady;
-        return false;
-    }
-    if (aPressed) {
-        preparePlay(resumeSel == 0 ? detail.playbackPositionTicks : 0LL);
-        return true;
-    }
-    return false;
-}
-
-// Resume prompt overlay
-void LibraryView::renderResumePrompt() {
-    const Ui::Palette& p = Ui::pal();
-    GRRLIB_Rectangle(Ui::screenLeft(), 0, Ui::screenWidth(), 480, p.dim, 1);
-    Ui::card(RP_X, RP_Y, RP_W, RP_H, 18, 0.0f);
-
-    Ui::textCentered(320, RP_Y + 16, tr("Resume playback?"), 17, p.text);
-    {
-        int secs = (int)(detail.playbackPositionTicks / 10000000LL);
-        int rh = secs / 3600, rm = (secs % 3600) / 60, rs = secs % 60;
-        char hint[48];
-        /* TRANSLATORS: under "Resume playback?": where it stopped, h:mm:ss or m:ss */
-        if (rh > 0) snprintf(hint, sizeof(hint), tr("at %d:%02d:%02d"), rh, rm, rs);
-        else        snprintf(hint, sizeof(hint), tr("at %d:%02d"), rm, rs);
-        Ui::textCentered(320, RP_Y + 40, hint, 13, p.textDim);
-    }
-
-    // Two rectangular buttons: Continue | From Start, the choice orange
-    const char* btnLabels[2] = { N_("Continue"), N_("From Start") };
-    for (int i = 0; i < 2; ++i)
-        Ui::button(rpButtonX(i), RP_BY, RP_BW, RP_BH, btnLabels[i], 15,
-                   resumeSel == i ? 1.0f : 0.0f, BTN_R);
-}
-
 // ---------------------------------------------------------------
-// drawDetailView(): the old video channels' title page.  Under the red
-// band: the title, a small poster with Play and Add to Queue beside it
-// (the tracks further right, each opening a list), then a line of stars,
-// rating, year and running time, the overview, and Cast / Director /
-// genres.  The D-pad walks the buttons (detailFocus), as the pointer does.
+// drawDetailView(): the old video channels' title page (see the layout
+// above).  The D-pad walks the buttons (detailFocus), as the pointer does.
 // ---------------------------------------------------------------
 void LibraryView::drawDetailView(ir_t& ir) {
     const Ui::Palette& p = Ui::pal();
     const DetailLayout L = detailLayout(detailWideThumb());
     const int pageW = 640 - 2 * (int)MARGIN;
+    const bool hasStart = detail.playbackPositionTicks > 0 && !detail.played;
+    const bool favorite = showMode ? showSeries.isFavorite : detail.isFavorite;
 
     Ui::backButton(backCx(), BACK_CY, BACK_R, detailFocus == F_BACK);
 
-    // ---- Title ----
+    // ---- Title: the film's, the episode's, or on a show page the series' ----
     {
         /* Japanese in it: drawn with the Japanese font (Text's fallback) */
-        const std::string title = filterDejaVu(detail.name, 200);
-        const int w = (int)(backCx() - BACK_R - 12 - MARGIN) - (detail.isFavorite ? 28 : 0);
+        const std::string title = filterDejaVu(showMode ? showSeries.name : detail.name, 200);
+        const int w = (int)(backCx() - BACK_R - 12 - MARGIN) - (favorite ? 28 : 0);
         titleText(2, MARGIN, 66, w, title, 20, p.text, true);
-        if (detail.isFavorite) {   /* in the queue (a favourite): a heart after the title (1) */
+        if (favorite) {   /* in the queue (a favourite): a heart after the title */
             int tw = (int)Text::width(font, title.c_str(), 20);
             Text::print(MARGIN + (tw < w ? tw : w) + 8, 66, font, "\xe2\x99\xa5", 20, p.accent);
         }
     }
 
-    // ---- Poster, Play, Add to Queue ----
+    // ---- Poster and the four buttons ----
     /* orange: the focus only (the pointer's or the D-pad's, one at a time) */
     auto lit = [&](int f) { return detailFocus == f ? 1.0f : 0.0f; };
-    drawThumb(detailTex, L.px, L.py, L.pw, L.ph, 0.0f, progressOf(detail),
-              detail.name.c_str(), false);
-    Ui::button(L.bx, L.playY, L.bw, L.playH, N_("Play"), 19,
-               lit(F_PLAY), BTN_R);
-    Ui::button(L.bx, L.favY, L.bw, L.favH,
-               detail.isFavorite ? N_("Remove from Queue") : N_("Add to Queue"), 14,
+    if (showMode)
+        drawThumb(showTex, L.px, L.py, L.pw, L.ph, 0.0f, -1.0f, showSeries.name.c_str(), false);
+    else
+        drawThumb(detailTex, L.px, L.py, L.pw, L.ph, 0.0f, progressOf(detail),
+                  detail.name.c_str(), false);
+    char play[64];
+    if (showMode)
+        /* TRANSLATORS: the show page's first button; the episode's number in the whole series */
+        snprintf(play, sizeof(play), hasStart ? tr("Resume episode %d") : tr("Play episode %d"), showEpIdx + 1);
+    else
+        snprintf(play, sizeof(play), "%s", hasStart ? tr("Resume") : tr("Play"));
+    Ui::button(L.c1x, L.r1y, L.cw, L.bh, play, 17, lit(F_PLAY), BTN_R);
+    if (hasStart)
+        Ui::button(L.c2x, L.r1y, L.cw, L.bh, N_("Play from beginning"), 17, lit(F_START), BTN_R);
+    Ui::button(L.c1x, L.r2y, L.cw, L.bh, favorite ? N_("Remove from Queue") : N_("Add to Queue"), 17,
                lit(F_QUEUE), BTN_R);
+    if (showMode)
+        Ui::button(L.c2x, L.r2y, L.cw, L.bh, N_("Select another episode"), 17, lit(F_EPS), BTN_R);
 
-    // ---- Version / Audio / Subtitles, right of the buttons: A opens a list ----
-    const std::vector<int> rows = trackRows(detail);
-    const int valX = (int)L.rowsX + 78, valW = (int)(L.rowsX + L.rowsW) - valX - 4;
-    for (int i = 0; i < (int)rows.size(); ++i) {
-        const int row = rows[i];
-        float bx, by, bw, bh;
-        rowBox(L, i, bx, by, bw, bh);
-        const bool focused = trackMenu == row || detailFocus == F_ROW + i;
-        Ui::button(bx, by, bw, bh, "", 13, focused ? 1.0f : 0.0f, BTN_R);
-        const int ry = (int)(by + (bh - 13) * 0.5f) - 1;
-        const u32 labelCol = focused ? p.textOnAccent : p.textDim;
-        const u32 valueCol = focused ? p.textOnAccent : p.text;
-        const char* label = row < 0 ? N_("Version") : row == 0 ? N_("Audio") : N_("Subtitles");
-        const char* rawTitle;
-        if (row < 0)
-            rawTitle = detail.versions[detailVersionSel].name.c_str();
-        else if (row == 0)
-            rawTitle = detailAudioSel < (int)detail.audioStreams.size()
-                ? detail.audioStreams[detailAudioSel].displayTitle.c_str() : "-";
-        else
-            rawTitle = (detailSubSel == -1)
-                ? tr("Off")
-                : (detailSubSel < (int)detail.subtitleStreams.size()
-                    ? detail.subtitleStreams[detailSubSel].displayTitle.c_str() : "-");
-        Ui::text(L.rowsX + 4, ry, tr(label), 13, labelCol);
-        std::string t = fitText(font, safeTitle(rawTitle, 36), 13, valW - 14);
-        Text::print(valX, ry, font, t.c_str(), 13, valueCol);
-        /* a small down arrow: it opens a list */
-        const float ax = bx + bw - 12, ay = by + bh * 0.5f;
-        Ui::triangle(ax - 4, ay - 2, ax + 4, ay - 2, ax, ay + 3, valueCol);
-    }
-    const float rowsBottom = rows.empty() ? L.playY : L.playY + rows.size() * ROW_STEP;
-
-    // ---- Stars, rating, year, running time (and watched, resume) ----
-    float y = L.py + L.ph;
-    if (L.favY + L.favH > y) y = L.favY + L.favH;
-    if (rowsBottom > y)      y = rowsBottom;
-    y += 12;
+    // ---- Stars, rating, year, length (watched); the pill at the end ----
+    float y = INFO_Y;
     {
         float x = MARGIN;
         const float cy = y + 9;
-        if (detail.communityRating > 0.0f)
-            x += Ui::stars(x, cy, 9, detail.communityRating, p.accent, Ui::alpha(p.textDim, 0.3f)) + 16;
-        if (!detail.officialRating.empty()) {
-            const float bw = Ui::textWidth(detail.officialRating.c_str(), 13) + 12;
+        const float stars = detail.communityRating > 0.0f ? detail.communityRating
+                          : showMode ? showSeries.communityRating : 0.0f;
+        const std::string& rating = !detail.officialRating.empty() || !showMode
+                                  ? detail.officialRating : showSeries.officialRating;
+        if (stars > 0.0f)
+            x += Ui::stars(x, cy, 9, stars, p.accent, Ui::alpha(p.textDim, 0.3f)) + 16;
+        if (!rating.empty()) {
+            const float bw = Ui::textWidth(rating.c_str(), 13) + 12;
             Ui::roundBorder(x, cy - 10, bw, 20, 3, 1.5f, p.text);
-            Ui::text(x + 6, cy - 8, detail.officialRating.c_str(), 13, p.text);
+            Ui::text(x + 6, cy - 8, rating.c_str(), 13, p.text);
             x += bw + 16;
         }
         char buf[48];
@@ -434,16 +379,28 @@ void LibraryView::drawDetailView(ir_t& ir) {
         if (detail.played) {
             snprintf(buf, sizeof(buf), "\xe2\x9c\x93 %s", tr("Watched"));
             Text::print(x, y + 1, font, buf, 14, p.ok);
-            x += Text::width(font, buf, 14) + 16;
         }
-        if (detail.playbackPositionTicks > 0 && detail.runtimeTicks > 0) {
-            int secs = (int)(detail.playbackPositionTicks / 10000000LL);
-            int h    = secs / 3600, m = (secs % 3600) / 60;
-            int pct  = (int)(detail.playbackPositionTicks * 100LL / detail.runtimeTicks);
-            /* TRANSLATORS: hours and minutes into the video, then how much of it is watched */
-            if (h > 0) snprintf(buf, sizeof(buf), tr("Resume at %dh%02d (%d%%)"), h, m, pct);
-            else       snprintf(buf, sizeof(buf), tr("Resume at %dmin (%d%%)"), m, pct);
-            Ui::text(x, y + 1, buf, 14, p.accentDark);
+    }
+    /* the pill: white, the part chosen (or whose list is open) orange */
+    const std::vector<PillPart> parts = pillParts(detail);
+    if (!parts.empty()) {
+        const float x0 = parts.front().x, pw = parts.back().x + parts.back().w - x0, r = PILL_H * 0.5f;
+        Ui::shadow(x0, PILL_Y + 2, pw, PILL_H, r, 4.0f, 0x00000050);
+        Ui::roundRect(x0, PILL_Y, pw, PILL_H, r, 0xFFFFFFFF, 0xD4D4D4FF);
+        Ui::roundBorder(x0, PILL_Y, pw, PILL_H, r, 1.0f, 0x8E8E8EFF);
+        for (int i = 0; i < (int)parts.size(); ++i) {
+            const PillPart& pp = parts[i];
+            const bool on = detailFocus == F_PILL + i || trackMenu == pp.which;
+            if (on) {   /* the whole pill in orange, only this part of it shown */
+                Ui::clip(pp.x, PILL_Y - 2, pp.w, PILL_H + 4);
+                Ui::roundRect(x0, PILL_Y, pw, PILL_H, r, Ui::HOVER_TOP, Ui::HOVER_BOTTOM);
+                Ui::roundBorder(x0, PILL_Y, pw, PILL_H, r, 1.5f, Ui::HOVER_EDGE);
+                Ui::clipReset();
+            }
+            if (i > 0)
+                Ui::roundRect(pp.x - 0.75f, PILL_Y + 5, 1.5f, PILL_H - 10, 0, 0x8E8E8EFF, 0x8E8E8EFF);
+            Ui::textCentered(pp.x + pp.w * 0.5f, PILL_Y + (PILL_H - 15) * 0.5f - 1, tr(pp.label), 15,
+                             on ? 0xFFFFFFFF : 0x3A3A3AFF);
         }
     }
     y += 28;
@@ -466,7 +423,7 @@ void LibraryView::drawDetailView(ir_t& ir) {
         }
     }
 
-    // ---- Cast, Director, genres ----
+    // ---- Cast, Director, genres (a show's: the series') ----
     {
         std::string cast, director;
         for (const auto& pp : detail.people) {
@@ -476,10 +433,11 @@ void LibraryView::drawDetailView(ir_t& ir) {
             if (!to.empty()) to += ", ";
             to += pp.name;
         }
+        const std::vector<std::string>& gl = showMode && !showSeries.genres.empty() ? showSeries.genres : detail.genres;
         std::string genres;
-        for (size_t i = 0; i < detail.genres.size(); i++) {
+        for (size_t i = 0; i < gl.size(); i++) {
             if (i) genres += ", ";
-            genres += detail.genres[i];
+            genres += gl[i];
         }
         float cy = CREDITS_Y;
         auto line = [&](const char* label, const std::string& v) {

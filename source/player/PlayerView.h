@@ -167,6 +167,8 @@ private:
     void  showControls(int ms = 5000);
     bool  chapterJump(int dir);   /* |< >| through the chapters, when there are */
     void  openPanel(Panel p);
+    void  openAudioList();      /* 1, or the audio button */
+    void  openSubList();        /* 2, or the subtitles button */
     void  hitTest(const ir_t& ir);
     void  toggleZoom();          /* Fit <-> Fill, kept for the next videos */
     Action activatePanelRow(int row);   /* the list's row taken */

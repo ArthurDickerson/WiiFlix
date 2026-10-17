@@ -162,6 +162,7 @@ void LibraryView::freeDetail() {
     detailVersionSel = 0;
     detailFocus = 0;
     detailHover = -1;
+    detailDpad  = false;
     trackMenu = TRACK_MENU_NONE;
     detailIsEpisode = false;
 }
@@ -210,9 +211,8 @@ void LibraryView::loadPosters() {
     state = globFavMode ? State::GlobalFavoritesReady : State::PostersReady;
 }
 
-/* Fills pendingPlay* for the item in `detail` (App then plays it).  queue:
- * the episodes previous/next walk through, instead of the season list. */
-void LibraryView::preparePlay(long long startTicks, const std::vector<JellyfinEpisode>* queue)
+/* Fills pendingPlay* for the item in `detail` (App then plays it). */
+void LibraryView::preparePlay(long long startTicks)
 {
     int audioIdx = (!detail.audioStreams.empty())
         ? detail.audioStreams[detailAudioSel].index : 0;
@@ -279,17 +279,11 @@ void LibraryView::preparePlay(long long startTicks, const std::vector<JellyfinEp
     pendingPlaySubIdx   = (detailSubSel >= 0 && detailSubSel < (int)detail.subtitleStreams.size())
                           ? detail.subtitleStreams[detailSubSel].index : -1;
     // Propagate episode list context for the player overlay
-    if (queue && !queue->empty()) {
-        /* shuffle: the drawn list is the queue, playing from its start */
-        pendingPlayEpisodes   = *queue;
-        pendingPlaySeriesId   = currentSeriesId;
-        pendingPlayEpisodeIdx = 0;
-    } else if (detailIsEpisode || !detail.seasonId.empty()) {
+    if (detailIsEpisode || !detail.seasonId.empty()) {
         /* next / previous go through the whole series, season after season:
-         * its episodes fetched, whatever list it was picked in (a season,
-         * Continue Watching, Next Up, search...).  Specials only around a
-         * special.  Without the series: its season, as on the screen or
-         * fetched. */
+         * its episodes fetched, whatever list it was picked in (the show
+         * page, Continue Watching, search...).  Specials only around a
+         * special.  Without the series: its season, fetched. */
         auto find = [&](const std::vector<JellyfinEpisode>& list) {
             for (int i = 0; i < (int)list.size(); ++i)
                 if (list[i].id == detailItemId) return i;
@@ -306,8 +300,6 @@ void LibraryView::preparePlay(long long startTicks, const std::vector<JellyfinEp
                               [&](const JellyfinEpisode& e) { return (e.seasonNumber == 0) != special; }),
                           fetched.end());
             idx = find(fetched);
-        } else if ((idx = find(episodes)) >= 0) {
-            list = &episodes;
         } else if (!detail.seriesId.empty() && !detail.seasonId.empty()) {
             fetched.clear();
             if (client.getEpisodes(serverUrl, auth, detail.seriesId, detail.seasonId, fetched))
@@ -331,36 +323,12 @@ void LibraryView::preparePlay(long long startTicks, const std::vector<JellyfinEp
     }
 }
 
-/* Shuffle (2 on the season or episode list): the server draws up to 100
- * episodes of the series, or of one season, in random order; the first one
- * starts and the rest become the queue for next / previous. */
-bool LibraryView::startShuffle(const std::string& seasonId)
-{
-    std::vector<JellyfinEpisode> drawn;
-    bool ok = false;
-    std::string err;
-    freeDetail();
-    runWithLoading([&]() {
-        ok = client.getShuffledEpisodes(serverUrl, auth, currentSeriesId, seasonId, 100, drawn);
-        if (ok && !drawn.empty())
-            ok = client.getItemDetail(serverUrl, auth, drawn[0].id, detail);
-        if (!ok) err = client.lastError();
-    });
-    if (!ok) { errMsg = err; state = State::Error; return false; }
-    if (drawn.empty()) return false;
-    SYS_Report("[Shuffle] %d episode(s) drawn%s\n", (int)drawn.size(), seasonId.empty() ? "" : " (one season)");
-    detailItemId    = drawn[0].id;
-    detailIsEpisode = true;
-    preparePlay(0LL, &drawn);
-    return true;
-}
-
 // ---------------------------------------------------------------
 void LibraryView::loadDetail() {
     if (detailItemId.empty()) { state = State::PostersReady; return; }
     freeDetail();
 
-    detailIsEpisode     = (detailReturnState == State::EpisodesReady) || detailIsEpisodeHint;
+    detailIsEpisode     = detailIsEpisodeHint;
     detailIsEpisodeHint = false;
 
     // Fetch metadata and decode thumbnail inside one background pass so the
@@ -370,6 +338,7 @@ void LibraryView::loadDetail() {
     runWithLoading([&]() {
         ok = client.getItemDetail(serverUrl, auth, detailItemId, detail);
         if (!ok) { fetchErr = client.lastError(); return; }
+        if (showMode) return;   /* the series' poster (showTex) */
         std::string imgBytes;
         if (isEp)
             client.getItemImageBytes(serverUrl, auth, detailItemId, 304, 171, imgBytes);
@@ -464,24 +433,6 @@ std::vector<std::string> LibraryView::wrapText(const std::string& text, int size
     return out;
 }
 
-void LibraryView::clampSeasonScroll() {
-    int n = (int)seasons.size();
-    if (seasonSel < 0) seasonSel = 0;
-    if (n > 0 && seasonSel >= n) seasonSel = n - 1;
-    if (seasonSel < seasonTop) seasonTop = seasonSel;
-    if (seasonSel >= seasonTop + ITEMS_VISIBLE) seasonTop = seasonSel - ITEMS_VISIBLE + 1;
-    if (seasonTop < 0) seasonTop = 0;
-}
-
-void LibraryView::clampEpisodeScroll() {
-    int n = (int)episodes.size();
-    if (episodeSel < 0) episodeSel = 0;
-    if (n > 0 && episodeSel >= n) episodeSel = n - 1;
-    if (episodeSel < episodeTop) episodeTop = episodeSel;
-    if (episodeSel >= episodeTop + ITEMS_VISIBLE) episodeTop = episodeSel - ITEMS_VISIBLE + 1;
-    if (episodeTop < 0) episodeTop = 0;
-}
-
 // ---------------------------------------------------------------
 void LibraryView::loadLibraries() {
     bool ok = false; std::string err;
@@ -536,7 +487,12 @@ void LibraryView::clearPendingPlay() {
 void LibraryView::onPlaybackFinished(const std::string& lastItemId) {
     clearPendingPlay();
     browse.invalidate();   // resume positions / next up changed
-    if (state == State::DetailReady || state == State::ResumePrompt) {
+    if (state == State::DetailReady && showMode) {
+        /* the show page again: the episodes' progress anew, the last one
+         * played shown */
+        showStartEpisodeId = lastItemId.empty() ? detailItemId : lastItemId;
+        state = State::ShowLoad;
+    } else if (state == State::DetailReady) {
         if (!lastItemId.empty()) detailItemId = lastItemId;
         /* an episode's page again, its picture wide: opened from the home
          * rows, only the hint said it was one */
@@ -751,71 +707,6 @@ std::string LibraryView::listFilter() const {
     return "ParentId=" + currentLibId;
 }
 
-const char* const LibraryView::SPECIALS_ROW = "special-features";
-
-void LibraryView::freeSeasonPosters() {
-    for (GRRLIB_texImg* t : seasonTex)
-        if (t) GRRLIB_FreeTexture(t);
-    seasonTex.clear();
-    if (seriesPosterTex) { GRRLIB_FreeTexture(seriesPosterTex); seriesPosterTex = nullptr; }
-}
-
-bool LibraryView::seasonGrid() const { return Ui::libraryStyle() == Ui::LibraryStyle::Posters; }
-
-GRRLIB_texImg* LibraryView::seasonPoster(int i) const {
-    if (i < 0 || i >= (int)seasons.size()) return nullptr;
-    if (seasons[i].id != SPECIALS_ROW && i < (int)seasonTex.size() && seasonTex[i]) return seasonTex[i];
-    return seriesPosterTex;
-}
-
-void LibraryView::loadSeasons() {
-    seasons.clear();
-    freeSeasonPosters();
-    bool ok = false; std::string err;
-    const bool posters = Ui::libraryStyle() != Ui::LibraryStyle::List;
-    std::vector<GRRLIB_texImg*> tex;
-    GRRLIB_texImg* seriesTex = nullptr;
-    runWithLoading([&]() {
-        ok = client.getSeasons(serverUrl, auth, currentSeriesId, seasons);
-        if (!ok) err = client.lastError();
-        seriesFavorite = false;
-        seriesSpecials = 0;
-        if (ok) client.getIsFavorite(serverUrl, auth, currentSeriesId, seriesFavorite, &seriesSpecials);
-        if (!ok || !posters) return;
-        /* each season's poster, sized for the List + Posters panel (the grid
-         * draws them smaller) */
-        const int n = (int)seasons.size() < SEASON_TEX_MAX ? (int)seasons.size() : SEASON_TEX_MAX;
-        tex.assign(n, nullptr);
-        int own = 0;
-        for (int i = 0; i < n; i++) {
-            std::string b;
-            client.getItemImageBytes(serverUrl, auth, seasons[i].id, 170, 255, b);
-            if (!b.empty()) tex[i] = loadJPEGTexture((const u8*)b.data(), (u32)b.size());
-            if (tex[i]) own++;
-        }
-        if (own < (int)seasons.size() || seriesSpecials > 0) {
-            std::string b;
-            client.getItemImageBytes(serverUrl, auth, currentSeriesId, 170, 255, b);
-            if (!b.empty()) seriesTex = loadJPEGTexture((const u8*)b.data(), (u32)b.size());
-        }
-        SYS_Report("[Seasons] %d seasons, %d poster%s of their own%s\n", (int)seasons.size(), own, own == 1 ? "" : "s",
-                   seriesTex ? ", the series' for the others" : "");
-    });
-    if (!ok) { errMsg = err; state = State::Error; }
-    else {
-        /* its special features: one more row, after the seasons */
-        if (seriesSpecials > 0) {
-            JellyfinSeason s;
-            s.id   = SPECIALS_ROW;
-            s.name = tr("Special Features");
-            seasons.push_back(s);
-        }
-        seasonTex = tex;
-        seriesPosterTex = seriesTex;
-        seasonSel = 0; seasonTop = 0; state = State::SeasonsReady;
-    }
-}
-
 void LibraryView::freeTVSuggestions() {
     for (int i = 0; i < 4; i++) {
         if (tvContTex[i]) { GRRLIB_FreeTexture(tvContTex[i]); tvContTex[i] = nullptr; }
@@ -883,21 +774,6 @@ void LibraryView::loadTVUpcoming() {
     state = State::TVUpcomingReady;
 }
 
-void LibraryView::loadEpisodes() {
-    episodes.clear();
-    bool ok = false; std::string err;
-    runWithLoading([&]() {
-        ok = client.getEpisodes(serverUrl, auth, currentSeriesId, currentSeasonId, episodes);
-        if (!ok) err = client.lastError();
-    });
-    if (!ok) { errMsg = err; state = State::Error; }
-    else {
-        SYS_Report("[Episodes] %d in season %d\n", (int)episodes.size(),
-                   episodes.empty() ? 0 : episodes[0].seasonNumber);
-        episodeSel = 0; episodeTop = 0; state = State::EpisodesReady;
-    }
-}
-
 // ---------------------------------------------------------------
 // update() — returns true when the user exits to the main menu
 // ---------------------------------------------------------------
@@ -912,12 +788,12 @@ bool LibraryView::loadingState(State s) {
     switch (s) {
     case State::LibsInit: case State::ItemsInit:
     case State::LibsLoad: case State::ItemsLoad:
-    case State::PostersLoad: case State::SeasonsLoad:
-    case State::EpisodesLoad: case State::DetailLoad:
+    case State::PostersLoad: case State::ShowLoad:
+    case State::DetailLoad:
     case State::CollectionsLoad:
     case State::FavoritesLoad: case State::MovieSuggestionsLoad:
     case State::TVSuggestionsLoad: case State::TVUpcomingLoad:
-    case State::GlobalFavoritesLoad: case State::SearchLoad: case State::SpecialsLoad:
+    case State::GlobalFavoritesLoad: case State::SearchLoad:
         return true;
     default:
         return false;
@@ -932,10 +808,10 @@ static unsigned mixKey(std::initializer_list<int> v) {
 
 unsigned LibraryView::focusKey() const {
     return mixKey({ libSel, itemSel, posterSel, detailAudioSel, detailSubSel, detailFocus, trackMenu, trackList.chosen(),
-                    resumeSel, seasonSel, episodeSel, continueSel, nextUpSel,
+                    epSel, continueSel, nextUpSel,
                     actRow, movieSuggestRow, movieSuggestContSel, movieSuggestRecSel,
                     tvSuggestRow, tvSuggestContSel, tvSuggestRecSel, tvUpcomingSel,
-                    searchSel, specialsSel, specialsGroup,
+                    searchSel,
                     sortPanel ? 1 + sortRow : 0, sortEdit.sort, sortEdit.genre, sortEdit.show,
                     (int)browse.focusKey() });
 }
@@ -975,7 +851,8 @@ bool LibraryView::startRemotePlay(const Remote::PlayRequest& r) {
     }
     /* a video: its page, then playback as with A on it (episodes find
      * their series themselves for next / previous) */
-    if (state != State::DetailReady && state != State::ResumePrompt) detailReturnState = state;
+    if (state == State::EpisodePick) state = State::DetailReady;   /* the show page under it */
+    if (state != State::DetailReady) detailReturnState = state;
     detailItemId        = items[idx].id;
     detailIsEpisodeHint = items[idx].type == "Episode";
     loadDetail();
@@ -1044,17 +921,12 @@ void LibraryView::openItem(const JellyfinItem& it, State returnState) {
     if (it.type == "Series") {
         currentSeriesId    = it.id;
         currentSeriesName  = it.name;
-        seasonsCallerState = returnState;
-        seasons.clear(); seasonSel = 0; seasonTop = 0;
-        state = State::SeasonsLoad;
-    } else if (it.type == "Season" && !it.seriesId.empty()) {
-        // a new season shows up as its own item: go straight to its episodes
-        currentSeriesId   = it.seriesId;
-        currentSeriesName = it.seriesName;
-        currentSeasonId   = it.id;
-        currentSeasonName = it.name;
-        episodesFromHome  = (returnState == State::LibsReady);
-        state = State::EpisodesLoad;
+        showReturnState = returnState;
+        state = State::ShowLoad;
+    } else if ((it.type == "Season" || it.type == "Episode") && !it.seriesId.empty()) {
+        /* an episode (Continue Watching, Next Up...) or a new season: its
+         * series' show page, the episode chosen */
+        openShow(it.seriesId, it.seriesName, it.type == "Episode" ? it.id : "", returnState);
     } else {
         detailItemId        = it.id;
         detailReturnState   = returnState;
@@ -1115,8 +987,7 @@ bool LibraryView::updateState(ir_t& ir) {
         case State::LibsLoad:              loadLibraries();          return false;
         case State::ItemsLoad:             loadItems();              return false;
         case State::PostersLoad:           loadPosters();            return false;
-        case State::SeasonsLoad:           loadSeasons();            return false;
-        case State::EpisodesLoad:          loadEpisodes();           return false;
+        case State::ShowLoad:           loadShow();               return false;
         case State::DetailLoad:            loadDetail();             return false;
         case State::CollectionsLoad:       loadMovieCollections();   return false;
         case State::FavoritesLoad:         loadMovieFavorites();     return false;
@@ -1125,21 +996,17 @@ bool LibraryView::updateState(ir_t& ir) {
         case State::TVUpcomingLoad:        loadTVUpcoming();         return false;
         case State::GlobalFavoritesLoad:   loadGlobalFavorites();    return false;
         case State::SearchLoad:            performSearch();          return false;
-        case State::SpecialsLoad:          loadSpecials();           return false;
 
         // Screens
         case State::LibsReady:             return updateHome(ir, aPressed);
         case State::GlobalFavoritesReady:  return updateGlobalFavorites(ir, aPressed);
         case State::ItemsReady:            return updateItemList(ir, aPressed);
         case State::PostersReady:          return updatePosterGrid(ir, aPressed);
-        case State::SeasonsReady:          return updateSeasons(ir, aPressed);
-        case State::SpecialsReady:         return updateSpecials(ir, aPressed);
-        case State::EpisodesReady:         return updateEpisodes(ir, aPressed);
         case State::MovieSuggestionsReady: return updateMovieSuggestions(ir, aPressed);
         case State::TVSuggestionsReady:    return updateTVSuggestions(ir, aPressed);
         case State::TVUpcomingReady:       return updateTVUpcoming(ir, aPressed);
         case State::DetailReady:           return updateDetail(ir, aPressed);
-        case State::ResumePrompt:          return updateResumePrompt(ir, aPressed);
+        case State::EpisodePick:           return updateEpisodePick(ir, aPressed);
         case State::SearchInput:           return updateSearchInput(ir);
         case State::SearchReady:           return updateSearchResults(ir, aPressed);
 
@@ -1162,7 +1029,7 @@ bool LibraryView::render(ir_t& ir) {
     const bool loading = (state == State::LibsInit || state == State::LibsLoad ||
         state == State::ItemsInit || state == State::ItemsLoad ||
         state == State::PostersLoad || state == State::DetailLoad ||
-        state == State::SeasonsLoad || state == State::EpisodesLoad ||
+        state == State::ShowLoad ||
         state == State::CollectionsLoad || state == State::FavoritesLoad ||
         state == State::MovieSuggestionsLoad ||
         state == State::TVSuggestionsLoad || state == State::TVUpcomingLoad ||
@@ -1222,14 +1089,11 @@ bool LibraryView::render(ir_t& ir) {
     case State::GlobalFavoritesReady:   renderGlobalFavorites(ir); break;
     case State::ItemsReady:             renderItemList(ir); break;
     case State::PostersReady:           renderPosterGrid(ir); break;
-    case State::SeasonsReady:           renderSeasons(ir); break;
-    case State::SpecialsReady:          renderSpecials(ir); break;
-    case State::EpisodesReady:          renderEpisodes(ir); break;
     case State::MovieSuggestionsReady:  renderMovieSuggestions(ir); break;
     case State::TVSuggestionsReady:     renderTVSuggestions(ir); break;
     case State::TVUpcomingReady:        renderTVUpcoming(ir); break;
     case State::DetailReady:            drawDetailView(ir); break;
-    case State::ResumePrompt:           drawDetailView(ir); renderResumePrompt(); break;
+    case State::EpisodePick:           renderEpisodePick(ir); break;
     case State::SearchInput:            renderSearchInput(ir); break;
     case State::SearchReady:            renderSearchResults(ir); break;
     default: break;

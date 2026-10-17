@@ -11,8 +11,7 @@
 using namespace LibDraw;
 
 bool LibraryView::updateSearchInput(ir_t& ir) {
-    searchKb.setOrigin((640 - searchKb.width()) * 0.5f, 132);
-    searchKb.setEnterLabel(N_("Search"));
+    searchKb.setEnterLabel(N_("Enter"));
     switch (searchKb.update(ir, searchQuery, 64)) {
     case Keyboard::Result::Enter:            // Search key or [+]
         if (!searchQuery.empty()) state = State::SearchLoad;
@@ -67,9 +66,8 @@ bool LibraryView::updateSearchResults(ir_t& ir, bool aPressed) {
         if (sel.type == "Series") {
             currentSeriesId   = sel.id;
             currentSeriesName = sel.name;
-            seasonsCallerState = State::SearchReady;
-            seasons.clear(); seasonSel = 0; seasonTop = 0;
-            state = State::SeasonsLoad;
+            showReturnState = State::SearchReady;
+            state = State::ShowLoad;
         } else if (sel.type == "BoxSet" && Ui::listMode()) {
             // text list of the collection; B comes back to the results
             inItemsDrilldown    = true;
@@ -89,6 +87,8 @@ bool LibraryView::updateSearchResults(ir_t& ir, bool aPressed) {
             itemPage          = 0;
             freePosters();
             state = State::ItemsInit;
+        } else if (sel.type == "Episode" && !sel.seriesId.empty()) {
+            openShow(sel.seriesId, sel.seriesName, sel.id, State::SearchReady);
         } else {
             detailItemId        = sel.id;
             detailReturnState   = State::SearchReady;
@@ -125,35 +125,9 @@ void LibraryView::performSearch() {
 
 // ---------------------------------------------------------------
 void LibraryView::renderSearchInput(ir_t& ir) {
-    const Ui::Palette& p = Ui::pal();
     Ui::header(tr("Search"));
-
-    // Search field: placeholder when empty, blinking caret
-    {
-        const float FX = 62, FY = 70, FW = 516, FH = 38;
-        bool caretOn = (ticks_to_millisecs(gettime()) / 500) % 2 == 0;
-        std::string display = searchQuery;
-        while (!display.empty() && Text::width(font, display.c_str(), 18) > (u32)(FW - 44))
-            display.erase(display.begin());
-        Ui::field(FX, FY, FW, FH, nullptr, 18, true);
-        if (searchQuery.empty())
-            Ui::text(FX + 20, FY + 9, tr("Type a title, an actor..."), 18, Ui::alpha(p.textDim, 0.8f));
-        else
-            Ui::text(FX + 20, FY + 9, display.c_str(), 18, p.text);
-        if (caretOn) {
-            float cx = FX + 20 + (searchQuery.empty() ? 0 : Ui::textWidth(display.c_str(), 18)) + 1;
-            Ui::roundRect(cx, FY + 9, 2, 20, 1, p.accent);
-        }
-    }
-
-    // Keyboard on its panel
-    Ui::card((640 - searchKb.width()) * 0.5f - 10, 122,
-             searchKb.width() + 20, searchKb.height() + 20, 16, 0.0f);
-    searchKb.render(ir);
-
-    const Ui::Hint l[] = { { "A", N_("Type") }, { "B", searchQuery.empty() ? N_("Back") : N_("Delete") } };
-    const Ui::Hint r[] = { { "-", N_("Shift") }, { "+!", N_("Search") } };
-    Ui::footer(l, 2, r, 2);
+    /* the Netflix channel's keyboard, the whole screen under the band */
+    searchKb.render(ir, searchQuery, false, tr("Type a title, an actor..."));
 }
 
 // ---------------------------------------------------------------

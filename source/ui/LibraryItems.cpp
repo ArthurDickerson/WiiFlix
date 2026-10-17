@@ -99,9 +99,8 @@ bool LibraryView::updateItemList(ir_t& ir, bool aPressed) {
         if (sel.type == "Series") {
             currentSeriesId    = sel.id;
             currentSeriesName  = sel.name;
-            seasonsCallerState = State::ItemsReady;
-            seasons.clear(); seasonSel = 0; seasonTop = 0;
-            state = State::SeasonsLoad;
+            showReturnState = State::ItemsReady;
+            state = State::ShowLoad;
         } else if (sel.type == "BoxSet" || sel.type == "Folder" || sel.type == "CollectionFolder") {
             // a collection or folder: its own list, B comes back here
             parentLibId      = currentLibId;
@@ -273,9 +272,8 @@ bool LibraryView::updatePosterGrid(ir_t& ir, bool aPressed) {
             if (items[posterSel].type == "Series") {
                 currentSeriesId    = items[posterSel].id;
                 currentSeriesName  = items[posterSel].name;
-                seasonsCallerState = State::PostersReady;
-                seasons.clear(); seasonSel = 0; seasonTop = 0;
-                state = State::SeasonsLoad;
+                showReturnState = State::PostersReady;
+                state = State::ShowLoad;
             } else if (items[posterSel].type == "BoxSet") {
                 // Drill into the collection (show its movies)
                 inBoxSetDrilldown = true;

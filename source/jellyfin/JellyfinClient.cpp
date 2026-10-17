@@ -1510,7 +1510,6 @@ bool JellyfinClient::getItemDetail(const std::string& serverUrl,
     out.playbackPositionTicks = jsonGetLongLong(resp, "PlaybackPositionTicks");
     out.isFavorite            = jsonGetBool(resp, "IsFavorite");
     out.played                = jsonGetBool(resp, "Played");
-    out.specialFeatures       = jsonGetInt(resp, "SpecialFeatureCount") + jsonGetInt(resp, "LocalTrailerCount");
     out.seriesId              = jsonGetString(resp, "SeriesId");
     out.seasonId              = jsonGetString(resp, "SeasonId");
 
@@ -1660,39 +1659,6 @@ void JellyfinClient::parseStreams(const std::string& json, std::vector<MediaStre
 }
 
 // ---------------------------------------------------------------------------
-// Fetch seasons for a TV series  GET /Shows/{seriesId}/Seasons
-// ---------------------------------------------------------------------------
-bool JellyfinClient::getSeasons(const std::string& serverUrl,
-                                 const JellyfinAuth& auth,
-                                 const std::string& seriesId,
-                                 std::vector<JellyfinSeason>& out) {
-    char qs[512];
-    snprintf(qs, sizeof(qs),
-        "/Shows/%s/Seasons?UserId=%s&Fields=IndexNumber&EnableImages=false",
-        seriesId.c_str(), auth.userId.c_str());
-    std::string url  = serverUrl + qs;
-    std::string resp;
-    int status = httpRequest(url, "GET", "", "", auth.accessToken, resp);
-    if (status != 200) {
-        if (status >= 0) errMsg = "getSeasons failed (HTTP " + std::to_string(status) + ")";
-        return false;
-    }
-
-    struct Ctx { JellyfinClient* self; std::vector<JellyfinSeason>* out; };
-    Ctx ctx{ this, &out };
-    forEachItemObject(resp, [](const std::string& obj, void* vctx) {
-        Ctx* c = static_cast<Ctx*>(vctx);
-        JellyfinSeason s;
-        s.id          = c->self->jsonGetString(obj, "Id");
-        s.name        = c->self->jsonGetString(obj, "Name");
-        s.indexNumber = c->self->jsonGetInt(obj,    "IndexNumber");
-        if (!s.id.empty()) c->out->push_back(s);
-    }, &ctx);
-
-    return true;
-}
-
-// ---------------------------------------------------------------------------
 // Fetch episodes for a season  GET /Shows/{seriesId}/Episodes?SeasonId=...
 // ---------------------------------------------------------------------------
 bool JellyfinClient::getEpisodes(const std::string& serverUrl,
@@ -1717,24 +1683,10 @@ bool JellyfinClient::getSeriesEpisodes(const std::string& serverUrl,
     char qs[512];
     snprintf(qs, sizeof(qs),
         "/Shows/%s/Episodes?UserId=%s&IsMissing=false"
-        "&Fields=IndexNumber,ParentIndexNumber,UserData&EnableImages=false",
+        "&Fields=IndexNumber,ParentIndexNumber,UserData,Overview,ProductionYear,OfficialRating"
+        "&EnableImages=false",
         seriesId.c_str(), auth.userId.c_str());
     return fetchEpisodes(serverUrl + qs, auth, out, 4u << 20);
-}
-
-bool JellyfinClient::getShuffledEpisodes(const std::string& serverUrl,
-                                          const JellyfinAuth& auth,
-                                          const std::string& seriesId,
-                                          const std::string& seasonId,
-                                          int limit,
-                                          std::vector<JellyfinEpisode>& out) {
-    char qs[512];
-    snprintf(qs, sizeof(qs),
-        "/Shows/%s/Episodes?UserId=%s%s%s&SortBy=Random&Limit=%d"
-        "&Fields=IndexNumber,ParentIndexNumber,UserData&EnableImages=false",
-        seriesId.c_str(), auth.userId.c_str(),
-        seasonId.empty() ? "" : "&SeasonId=", seasonId.c_str(), limit);
-    return fetchEpisodes(serverUrl + qs, auth, out);
 }
 
 bool JellyfinClient::fetchEpisodes(const std::string& url, const JellyfinAuth& auth,
@@ -1757,6 +1709,10 @@ bool JellyfinClient::fetchEpisodes(const std::string& url, const JellyfinAuth& a
         e.seasonNumber          = c->self->jsonGetInt(obj,    "ParentIndexNumber");
         e.playbackPositionTicks = c->self->jsonGetLongLong(obj, "PlaybackPositionTicks");
         e.played                = c->self->jsonGetBool(obj, "Played");
+        e.runtimeTicks          = c->self->jsonGetLongLong(obj, "RunTimeTicks");
+        e.year                  = c->self->jsonGetInt(obj, "ProductionYear");
+        e.officialRating        = c->self->jsonGetString(obj, "OfficialRating");
+        e.overview              = c->self->jsonGetString(obj, "Overview");
         if (!e.id.empty()) c->out->push_back(e);
     }, &ctx);
 
@@ -2978,48 +2934,6 @@ bool JellyfinClient::getSubtitleSrt(const std::string& serverUrl,
     int st = httpRequest(serverUrl + path, "GET", "", "", auth.accessToken, outSrt, 4 * 1024 * 1024);
     SYS_Report("[Subtitles] track %d: HTTP %d, %u bytes\n", streamIndex, st, (unsigned)outSrt.size());
     return st == 200 && !outSrt.empty();
-}
-
-bool JellyfinClient::getIsFavorite(const std::string& serverUrl, const JellyfinAuth& auth,
-                                    const std::string& itemId, bool& favorite, int* specials)
-{
-    std::string resp;
-    int status = httpRequest(serverUrl + "/Users/" + auth.userId + "/Items/" + itemId,
-                             "GET", "", "", auth.accessToken, resp);
-    if (status != 200) return false;
-    favorite = jsonGetBool(resp, "IsFavorite");
-    if (specials) *specials = jsonGetInt(resp, "SpecialFeatureCount") + jsonGetInt(resp, "LocalTrailerCount");
-    return true;
-}
-
-bool JellyfinClient::getSpecialFeatures(const std::string& serverUrl, const JellyfinAuth& auth,
-                                         const std::string& itemId, std::vector<JellyfinItem>& out)
-{
-    out.clear();
-    struct Ctx { JellyfinClient* self; std::vector<JellyfinItem>* out; };
-    Ctx ctx{ this, &out };
-    bool any = false;
-    /* both answer a bare array: read as the "Items" of a list */
-    for (const char* route : { "/LocalTrailers", "/SpecialFeatures" }) {
-        std::string resp;
-        if (httpRequest(serverUrl + "/Items/" + itemId + route + "?userId=" + auth.userId,
-                        "GET", "", "", auth.accessToken, resp) != 200) continue;
-        any = true;
-        forEachItemObject("{\"Items\":" + resp + "}", [](const std::string& obj, void* vctx) {
-            Ctx* c = static_cast<Ctx*>(vctx);
-            JellyfinItem it;
-            it.id           = c->self->jsonGetString(obj, "Id");
-            it.name         = c->self->jsonGetString(obj, "Name");
-            it.type         = c->self->jsonGetString(obj, "Type");
-            it.extraType    = c->self->jsonGetString(obj, "ExtraType");
-            it.runtimeTicks = c->self->jsonGetLongLong(obj, "RunTimeTicks");
-            it.playbackPositionTicks = c->self->jsonGetLongLong(obj, "PlaybackPositionTicks");
-            if (it.extraType.empty()) it.extraType = it.type == "Trailer" ? "Trailer" : "Extra";
-            if (!it.id.empty()) c->out->push_back(it);
-        }, &ctx);
-    }
-    if (!any) errMsg = N_("No special features");
-    return any;
 }
 
 bool JellyfinClient::getItemsByIds(const std::string& serverUrl,

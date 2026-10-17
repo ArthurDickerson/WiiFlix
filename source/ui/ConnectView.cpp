@@ -241,7 +241,8 @@ ConnectResult ConnectView::update(ir_t& ir) {
     irMode = ir.valid;
 
     bool irTabHandled = false;
-    if (ir.valid && aPressed && ir.y >= TAB_Y && ir.y <= TAB_Y + TAB_H &&
+    /* the tabs are under the keyboard while it is up */
+    if (!kbActive && ir.valid && aPressed && ir.y >= TAB_Y && ir.y <= TAB_Y + TAB_H &&
         ir.x >= TAB_X0 && ir.x < TAB_X0 + 3 * TAB_W) {
         activeTab = (Tab)(int)((ir.x - TAB_X0) / TAB_W);
         kbActive = false;
@@ -471,7 +472,6 @@ ConnectResult ConnectView::update(ir_t& ir) {
 void ConnectView::handleVKBInput(ir_t& ir) {
     int fi = (int)focusedField;
     if (fi > 2) { kbActive = false; return; }
-    kb.setOrigin((640 - kb.width()) * 0.5f, 238);
     kb.setEnterLabel(fi < 2 ? N_("Next") : N_("Done"));
     switch (kb.update(ir, fields[fi], 255)) {
     case Keyboard::Result::Enter:
@@ -616,27 +616,12 @@ void ConnectView::renderCredentials(ir_t& ir) {
 }
 
 void ConnectView::renderVKB(ir_t& ir) {
-    // Keyboard panel (covers the lower fields while typing; the edited
-    // field is shown in the panel's title row)
-    kb.setOrigin((640 - kb.width()) * 0.5f, 238);
-    const int PX = (int)((640 - kb.width()) * 0.5f) - 12, PW = (int)kb.width() + 24;
-    const int PY = 238 - 50, PH = (int)kb.height() + 62;
-    GRRLIB_Rectangle(Ui::screenLeft(), 0, Ui::screenWidth(), 480, Ui::alpha(Ui::pal().dim, 0.5f), 1);
-    Ui::card(PX, PY, PW, PH, 16, 0.0f);
-    {
-        int fi = (int)focusedField;
-        const char* names[3] = { N_("Server URL"), N_("Username"), N_("Password") };
-        if (fi <= 2) {
-            std::string v = fi == 2 ? std::string(fields[fi].size(), '*') : fields[fi];
-            v += "_";
-            while (v.size() > 1 && Ui::textWidth(v.c_str(), 16) > PW - 150)
-                v.erase(v.begin());
-            Ui::text(PX + 16, PY + 13, tr(names[fi]), 14, Ui::pal().textDim);
-            Ui::field(PX + 110, PY + 8, PW - 122, 28, v.c_str(), 16, true);
-        }
-    }
-
-    kb.render(ir);
+    /* the Netflix channel's keyboard over the page, under the band; the
+     * field edited named in the empty field */
+    const int fi = (int)focusedField;
+    if (fi > 2) return;
+    const char* names[3] = { N_("Server URL"), N_("Username"), N_("Password") };
+    kb.render(ir, fields[fi], fi == 2, tr(names[fi]));
 }
 
 void ConnectView::renderQuickConnect(ir_t& ir) {
