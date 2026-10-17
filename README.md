@@ -7,7 +7,30 @@
 
 **WiiFLIX** is a homebrew [Jellyfin](https://jellyfin.org) client for the Nintendo Wii, for **movies and TV shows** meant to replicate the original Wii Netflix app. It is a fork of [WiiFin](https://github.com/fabienmillet/WiiFin).
 
-Written in C++ with [GRRLIB](https://github.com/GRRLIB/GRRLIB) and [MPlayer CE](https://github.com/extremscorner/mplayer-ce). Runs from the Homebrew Channel or as its own channel on the Wii Menu.
+## 📸 Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="assets/screenshots/Launch%20Screen.png" alt="Launch screen" width="400"/><br><sub>Launch screen</sub></td>
+    <td align="center"><img src="assets/screenshots/Profiles.png" alt="Profiles" width="400"/><br><sub>Profiles</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="assets/screenshots/Home%20Screen.png" alt="Home screen" width="400"/><br><sub>Home screen</sub></td>
+    <td align="center"><img src="assets/screenshots/Genre%20Category%20Selection.png" alt="Genre category selection" width="400"/><br><sub>Genre category selection</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="assets/screenshots/TV%20Show%20Details.png" alt="TV show details" width="400"/><br><sub>TV show details</sub></td>
+    <td align="center"><img src="assets/screenshots/Episode%20Selection.png" alt="Episode selection" width="400"/><br><sub>Episode selection</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="assets/screenshots/Search.png" alt="Search" width="400"/><br><sub>Search</sub></td>
+    <td align="center"><img src="assets/screenshots/Playback.png" alt="Playback" width="400"/><br><sub>Playback</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="assets/screenshots/Audio%20Menu.png" alt="Audio menu" width="400"/><br><sub>Audio menu</sub></td>
+    <td align="center"><img src="assets/screenshots/Subtitle%20Menu.png" alt="Subtitle menu" width="400"/><br><sub>Subtitle menu</sub></td>
+  </tr>
+</table>
 
 ## ✨ Features
 
