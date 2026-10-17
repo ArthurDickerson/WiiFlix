@@ -5,7 +5,7 @@
 
 ---
 
-**WiiFLIX** is a homebrew [Jellyfin](https://jellyfin.org) client for the Nintendo Wii, for **movies and TV shows** meant to replicate the original Wii Netflix app. It is a fork of [WiiFin](https://github.com/fabienmillet/WiiFin).
+**WiiFLIX** is a homebrew [Jellyfin](https://jellyfin.org) client for the Nintendo Wii, for **movies and TV shows** meant to replicate the original Wii Netflix app. It is a fork of [WiiFin](https://github.com/fabienmillet/WiiFin). Full disclosure, this app has largely been vibe-coded. I wanted an app like this for years and haven't been able to find it. I have some programming experience but not enough for this level of application. [fabiemillet](https://github.com/fabienmillet) did so much work with WiiFin, Claude Code and I were able to make WiiFLIX to relive the Wii Netflix app from my childhood.
 
 ## 📸 Screenshots
 
