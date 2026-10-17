@@ -213,7 +213,7 @@ float pulse();
 void avatar(float cx, float cy, float r, const char* name, float focus);
 
 /* The loading animation centred at cx, cy: five blocks a swell runs
- * through (ring: unused, the ring.png of before). */
-void spinner(GRRLIB_texImg* ring, float cx, float cy);
+ * through. */
+void spinner(float cx, float cy);
 
 } // namespace Ui

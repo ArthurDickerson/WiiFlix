@@ -10,11 +10,11 @@
 #include "CoverLine.h"
 #include "Keyboard.h"
 #include "ListFeed.h"
+#include "TrackList.h"
 
 class LibraryView {
 public:
     LibraryView(GRRLIB_ttfFont* font, GRRLIB_ttfFont* jpFont, GRRLIB_texImg* cursorTex,
-                GRRLIB_texImg* ringTex,
                 JellyfinClient& client,
                 const JellyfinAuth& auth, const std::string& serverUrl);
 
@@ -71,7 +71,6 @@ private:
     GRRLIB_ttfFont* font;
     GRRLIB_ttfFont* jpFont;
     GRRLIB_texImg*  cursorTex;
-    GRRLIB_texImg*  ringTex;
     JellyfinClient& client;
     JellyfinAuth    auth;
     std::string     serverUrl;
@@ -219,12 +218,9 @@ private:
     int  detailHover = -1;     /* the button under the pointer last frame */
     int  resumeHover = -1;     /* the resume question's, likewise */
     static const int TRACK_MENU_NONE = -2;
-    int  trackMenu = TRACK_MENU_NONE, trackMenuSel = 0, trackMenuTop = 0;
-    int  trackMenuHover = -1;  /* the list's row under the pointer last frame */
-    bool trackMenuDpad = false;   /* the D-pad moved its choice last */
+    int  trackMenu = TRACK_MENU_NONE;
+    TrackList trackList;       /* its rows (ui/TrackList, the player's too) */
     void openTrackMenu(int which);
-    int  trackMenuCount() const;
-    std::string trackMenuLabel(int i) const;
     int detailVersionSel = 0;  // index into detail.versions (several files)
     void selectVersion(int v); // its tracks in the audio / subtitle rows
     void selectDefaultTracks(int audioIndex, int subIndex);   // stream indexes, -1 none

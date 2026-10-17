@@ -16,8 +16,7 @@ enum class ConnectResult {
 
 class ConnectView {
 public:
-    ConnectView(GRRLIB_texImg* btn, GRRLIB_texImg* cursor,
-                GRRLIB_ttfFont* font, JellyfinClient& client);
+    ConnectView(GRRLIB_texImg* cursor, GRRLIB_ttfFont* font, JellyfinClient& client);
     ~ConnectView();
 
     // Pre-fill server URL and username (called before showing the view)
@@ -33,7 +32,6 @@ public:
     std::string  username;   // username used to authenticate (empty for QuickConnect)
 
 private:
-    GRRLIB_texImg* btnTex;
     GRRLIB_texImg* cursorTex;
     GRRLIB_ttfFont* font;
     JellyfinClient& client;

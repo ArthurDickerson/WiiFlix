@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include "../jellyfin/JellyfinClient.h"
+#include "../ui/TrackList.h"
 
 class Trickplay;
 class Subtitles;
@@ -58,7 +59,7 @@ public:
         Home,     /* HOME button                                   */
     };
 
-    PlayerView(GRRLIB_ttfFont* font, GRRLIB_texImg* cursor, GRRLIB_texImg* ring);
+    PlayerView(GRRLIB_ttfFont* font, GRRLIB_texImg* cursor);
 
     void setContext(const PlayerViewContext& c);
 
@@ -109,7 +110,6 @@ private:
 
     GRRLIB_ttfFont* font;
     GRRLIB_texImg*  cursorTex;
-    GRRLIB_texImg*  ringTex;
 
     PlayerViewContext ctx;
     std::string busyMsg;
@@ -118,9 +118,8 @@ private:
     Subtitles*  subtitles = nullptr;
     void drawSubtitle(float bottom);
 
-    Panel panel        = Panel::None;
-    int   panelSel     = 0;
-    int   panelTop     = 0;
+    Panel panel        = Panel::None;   /* the track list open, for which */
+    TrackList trackList;
     u64   controlsUntil = 0;   /* ms timestamp; controls visible until then */
     bool  firstPicture  = false; /* the first picture shown: the controls go soon after */
     u64   holdSince = 0, holdLast = 0;   /* Left / Right held: seeking on */
@@ -155,8 +154,6 @@ private:
     /* Hit-testing results for the current frame */
     int   hoverButton = -1;    /* 0..4 = transport, 5 = zoom, 6 = back */
     bool  hoverBar    = false;
-    int   hoverRow    = -1;    /* panel row */
-    int   prevHoverRow = -1;   /* hover only moves the selection when it changes */
     bool  hoverIntro  = false;
 
     float duration() const;
@@ -170,12 +167,9 @@ private:
     void  showControls(int ms = 5000);
     bool  chapterJump(int dir);   /* |< >| through the chapters, when there are */
     void  openPanel(Panel p);
-    int   panelCount() const;
-    std::string panelLabel(int row) const;
-    bool  panelRowIsCurrent(int row) const;
     void  hitTest(const ir_t& ir);
     void  toggleZoom();          /* Fit <-> Fill, kept for the next videos */
-    Action activatePanelRow(int row);
+    Action activatePanelRow(int row);   /* the list's row taken */
 
     void drawSpinner(float cx, float cy);
     std::string fitText(const std::string& s, int size, int maxW);

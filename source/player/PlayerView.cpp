@@ -34,9 +34,6 @@ static float trackR() { return arrowX(+1) - ARROW_W * 0.5f - 20; }
 static float zoomCx() { return Ui::screenRight() - 48; }
 static float backCx() { return Ui::screenRight() - 59; }
 static const int INTRO_X    = 466, INTRO_Y = 270, INTRO_W = 150, INTRO_H = 40;
-static const int LIST_X     = 150, LIST_W  = 340;
-static const int LIST_Y     = 112, ROW_H   = 34;
-static const int LIST_ROWS  = 7;
 
 /* MPlayer's cache (cache2.c): % ahead, -1 once the whole stream is in.
  * Playback starts at -cache-min (WiiPlayer.cpp: 8). */
@@ -88,8 +85,8 @@ static std::string streamLabel(const MediaStream& s, int n)
 
 /* ------------------------------------------------------------------------ */
 
-PlayerView::PlayerView(GRRLIB_ttfFont* f, GRRLIB_texImg* cursor, GRRLIB_texImg* ring)
-    : font(f), cursorTex(cursor), ringTex(ring)
+PlayerView::PlayerView(GRRLIB_ttfFont* f, GRRLIB_texImg* cursor)
+    : font(f), cursorTex(cursor)
 {
     showControls();
 }
@@ -284,50 +281,42 @@ void PlayerView::toast(const std::string& msg, int ms)
     toastUntil = nowMs() + ms;
 }
 
+/* The track list (ui/TrackList), the one in use chosen */
 void PlayerView::openPanel(Panel p)
 {
-    panel    = p;
-    panelSel = 0;
-    for (int i = 0; i < panelCount(); ++i)
-        if (panelRowIsCurrent(i)) { panelSel = i; break; }
-    panelTop = panelSel >= LIST_ROWS ? panelSel - LIST_ROWS + 1 : 0;
-    prevHoverRow = -2;   /* first hover after opening counts as a move */
-}
-
-int PlayerView::panelCount() const
-{
-    if (panel == Panel::Audio) return (int)ctx.audioStreams.size();
-    if (panel == Panel::Sub)   return (int)ctx.subStreams.size() + 1;   /* + "Off" */
-    return 0;
-}
-
-std::string PlayerView::panelLabel(int row) const
-{
-    if (panel == Panel::Audio) return streamLabel(ctx.audioStreams[row], row + 1);
-    if (row == 0) return tr("Off");
-    return streamLabel(ctx.subStreams[row - 1], row);
-}
-
-bool PlayerView::panelRowIsCurrent(int row) const
-{
-    if (panel == Panel::Audio) return ctx.audioStreams[row].index == ctx.currentAudio;
-    if (row == 0) return ctx.currentSub < 0;
-    return ctx.subStreams[row - 1].index == ctx.currentSub;
+    panel = p;
+    std::vector<std::string> rows;
+    int current = -1;
+    if (p == Panel::Audio) {
+        for (size_t i = 0; i < ctx.audioStreams.size(); ++i) {
+            rows.push_back(streamLabel(ctx.audioStreams[i], (int)i + 1));
+            if (ctx.audioStreams[i].index == ctx.currentAudio) current = (int)i;
+        }
+    } else {
+        rows.push_back(tr("Off"));
+        if (ctx.currentSub < 0) current = 0;
+        for (size_t i = 0; i < ctx.subStreams.size(); ++i) {
+            rows.push_back(streamLabel(ctx.subStreams[i], (int)i + 1));
+            if (ctx.subStreams[i].index == ctx.currentSub) current = (int)i + 1;
+        }
+    }
+    trackList.open(p == Panel::Audio ? tr("Audio track") : tr("Subtitles"), rows, current);
 }
 
 PlayerView::Action PlayerView::activatePanelRow(int row)
 {
-    if (row < 0 || row >= panelCount()) return Action::None;
-    bool current = panelRowIsCurrent(row);
     Panel p = panel;
     panel = Panel::None;
     showControls();
-    if (current) return Action::None;
     if (p == Panel::Audio) {
+        if (row < 0 || row >= (int)ctx.audioStreams.size()) return Action::None;
+        if (ctx.audioStreams[row].index == ctx.currentAudio) return Action::None;
         pickAudio = ctx.audioStreams[row].index;
         return Action::Audio;
     }
+    if (row < 0 || row > (int)ctx.subStreams.size()) return Action::None;
     pickSub = (row == 0) ? -1 : ctx.subStreams[row - 1].index;
+    if (pickSub == ctx.currentSub) return Action::None;
     return Action::Sub;
 }
 
@@ -335,17 +324,9 @@ void PlayerView::hitTest(const ir_t& ir)
 {
     hoverButton = -1;
     hoverBar    = false;
-    hoverRow    = -1;
     hoverIntro  = introVisible() && inRect(ir, INTRO_X, INTRO_Y, INTRO_W, INTRO_H);
 
-    if (panel != Panel::None) {
-        int rows = panelCount() - panelTop;
-        if (rows > LIST_ROWS) rows = LIST_ROWS;
-        for (int i = 0; i < rows; ++i)
-            if (inRect(ir, LIST_X, LIST_Y + 44 + i * ROW_H, LIST_W, ROW_H))
-                hoverRow = panelTop + i;
-        return;
-    }
+    if (panel != Panel::None) return;   /* the track list's own */
     /* still on screen while they fade out: still clickable */
     if (!controlsVisible() && controlsAlpha < 0.3f) return;
     const bool chapters = ctx.chapters.size() >= 2;
@@ -432,15 +413,12 @@ PlayerView::Action PlayerView::update(u32 down, const ir_t& ir)
 
     /* ---- Track picker ---- */
     if (panel != Panel::None) {
-        int n = panelCount();
-        if (hoverRow >= 0 && hoverRow != prevHoverRow) panelSel = hoverRow;
-        prevHoverRow = hoverRow;
-        if (down & WPAD_BUTTON_B) { panel = Panel::None; showControls(); return Action::None; }
-        if ((down & WPAD_BUTTON_UP)   && panelSel > 0)     --panelSel;
-        if ((down & WPAD_BUTTON_DOWN) && panelSel + 1 < n) ++panelSel;
-        if (panelSel < panelTop) panelTop = panelSel;
-        if (panelSel >= panelTop + LIST_ROWS) panelTop = panelSel - LIST_ROWS + 1;
-        if (down & WPAD_BUTTON_A) return activatePanelRow(panelSel);
+        switch (trackList.update(ir, down & WPAD_BUTTON_UP, down & WPAD_BUTTON_DOWN,
+                                 down & WPAD_BUTTON_A, down & WPAD_BUTTON_B)) {
+        case TrackList::Result::Picked: return activatePanelRow(trackList.chosen());
+        case TrackList::Result::Closed: panel = Panel::None; showControls(); break;
+        default: break;
+        }
         return Action::None;
     }
 
@@ -549,7 +527,7 @@ std::string PlayerView::fitText(const std::string& s, int size, int maxW)
 
 void PlayerView::drawSpinner(float cx, float cy)
 {
-    Ui::spinner(ringTex, cx, cy);
+    Ui::spinner(cx, cy);
 }
 
 /* Centred pill with a message (busy state, toasts). */
@@ -566,7 +544,6 @@ static void messagePill(float cy, const std::string& msg, int size)
 
 void PlayerView::render(const ir_t& ir)
 {
-    const Ui::Palette& p = Ui::pal();
     GRRLIB_FillScreen(0x000000FF);
     const bool hasVideo = VideoSurface::draw();
 
@@ -777,30 +754,7 @@ void PlayerView::render(const ir_t& ir)
     }
 
     /* ---- Track picker ---- */
-    if (panel != Panel::None) {
-        int n = panelCount();
-        int rows = n - panelTop < LIST_ROWS ? n - panelTop : LIST_ROWS;
-        int h = 44 + rows * ROW_H + 12;
-        Ui::card(LIST_X, LIST_Y, LIST_W, h, 16, 0.0f);
-        Ui::text(LIST_X + 18, LIST_Y + 12, panel == Panel::Audio ? tr("Audio track") : tr("Subtitles"),
-                 18, p.accentDark);
-        Ui::roundRect(LIST_X + 14, LIST_Y + 38, LIST_W - 28, 1.5f, 0.75f, Ui::alpha(p.cardBorder, 0.6f));
-        for (int i = 0; i < rows; ++i) {
-            int row = panelTop + i;
-            int y = LIST_Y + 44 + i * ROW_H;
-            bool sel = row == panelSel;
-            if (sel)
-                Ui::roundRect(LIST_X + 8, y, LIST_W - 16, ROW_H - 4, (ROW_H - 4) * 0.5f,
-                              Ui::mix(p.accent, 0xFFFFFFFF, 0.2f), p.accentDark);
-            bool current = panelRowIsCurrent(row);
-            int  maxW = LIST_W - 48 - (current ? 70 : 0);
-            Ui::text(LIST_X + 22, y + 7, fitText(panelLabel(row), 16, maxW).c_str(), 16,
-                     sel ? p.textOnAccent : p.text);
-            if (current)
-                Ui::textRight(LIST_X + LIST_W - 22, y + 9, tr("\xe2\x9c\x93 Current"), 13,
-                              sel ? p.textOnAccent : p.ok);
-        }
-    }
+    if (panel != Panel::None) trackList.draw();
 
     /* ---- Toast ---- */
     if (!toastMsg.empty() && nowMs() < toastUntil)

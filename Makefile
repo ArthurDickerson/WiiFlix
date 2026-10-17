@@ -40,12 +40,10 @@ ASSET_OFILES := \
 	$(BUILD)/stub_zone.o \
 	$(BUILD)/wii_font_ttf.o \
 	$(BUILD)/jp_font_ttf.o \
-	$(BUILD)/button_start_png.o \
-	$(BUILD)/logo_wiifin_png.o \
+	$(BUILD)/logo_WiiFLIX_png.o \
 	$(BUILD)/cursor_pointer_png.o \
 	$(BUILD)/cursor_hand_open_png.o \
 	$(BUILD)/cursor_hand_closed_png.o \
-	$(BUILD)/ring_png.o \
 	$(BUILD)/cacert_pem.o \
 	$(BUILD)/fx_start_mp3.o \
 	$(BUILD)/fx_select_mp3.o \
@@ -140,13 +138,9 @@ $(BUILD)/cursor_hand_closed_png.o: data/cursors/HandClosedP1-64.png
 	xxd -i $< > $(BUILD)/cursor_hand_closed_png.h
 	$(CC) -x c -c -o $@ -I$(BUILD) $(BUILD)/cursor_hand_closed_png.h
 
-$(BUILD)/button_start_png.o: data/images/button_start.png
-	xxd -i -n data_button_start_png $< > $(BUILD)/button_start_png.h
-	$(CC) -x c -c -o $@ $(BUILD)/button_start_png.h
-
-$(BUILD)/logo_wiifin_png.o: data/images/logo_wiifin.png
-	xxd -i -n data_logo_wiifin_png $< > $(BUILD)/logo_wiifin_png.h
-	$(CC) -x c -c -o $@ $(BUILD)/logo_wiifin_png.h
+$(BUILD)/logo_WiiFLIX_png.o: data/images/logo_WiiFLIX.png
+	xxd -i -n data_logo_WiiFLIX_png $< > $(BUILD)/logo_WiiFLIX_png.h
+	$(CC) -x c -c -o $@ $(BUILD)/logo_WiiFLIX_png.h
 
 # The interface's translations (lang/*.po), see source/core/Lang.cpp
 LANG_PO := $(sort $(wildcard lang/*.po))
@@ -161,10 +155,6 @@ $(BUILD)/wii_font_ttf.o: data/fonts/wii_font.ttf
 $(BUILD)/jp_font_ttf.o: data/fonts/jp_font.ttf
 	xxd -i -n data_jp_font_ttf $< > $(BUILD)/jp_font_ttf.h
 	$(CC) -x c -c -o $@ $(BUILD)/jp_font_ttf.h
-
-$(BUILD)/ring_png.o: data/images/ring.png
-	xxd -i -n data_ring_png $< > $(BUILD)/ring_png.h
-	$(CC) -x c -c -o $@ $(BUILD)/ring_png.h
 
 $(BUILD)/cacert_pem.o: data/certs/cacert.pem
 	(cat $<; printf '\0') > $(BUILD)/cacert_pem_null.pem

@@ -143,9 +143,7 @@ bool runPlaySession(JellyfinClient& client,
                     const std::string& serverUrl,
                     LibraryView& lv,
                     GRRLIB_ttfFont* font,
-                    GRRLIB_texImg* btnTex,
                     GRRLIB_texImg* cursorTex,
-                    GRRLIB_texImg* ringTex,
                     std::string& lastItemId)
 {
     /* the server's remote control drives this session (see the loop) */
@@ -174,7 +172,7 @@ bool runPlaySession(JellyfinClient& client,
     /* ao_gekko needs the DSP: ASND goes off */
     MusicBGM::pause();
 
-    PlayerView view(font, cursorTex, ringTex);
+    PlayerView view(font, cursorTex);
     Trickplay trickplay;
     view.setTrickplay(&trickplay);
     ir_t ir;
@@ -596,7 +594,7 @@ bool runPlaySession(JellyfinClient& client,
             case PlayerView::Action::Home: {
                 bool wasPaused = g_mplayer_paused;
                 if (!wasPaused) wii_player_pause_toggle();
-                if (doShowHomeOverlay(font, btnTex, cursorTex))
+                if (doShowHomeOverlay(font, cursorTex))
                     requestStop(PLAYER_STOP_WIIMENU, N_("Stopping..."));
                 else if (!wasPaused)
                     wii_player_pause_toggle();

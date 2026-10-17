@@ -37,10 +37,6 @@
 #include <ogc/ios.h>
 #include <ogc/lwp_watchdog.h>
 
-/* Ring spinner PNG embedded asset (unused since the five-block loader) */
-extern unsigned char data_ring_png[];
-extern unsigned int  data_ring_png_len;
-
 volatile bool g_app_powerOff = false;
 volatile bool g_app_reset    = false;
 volatile bool g_restartApp = false;
@@ -94,10 +90,8 @@ bool showErrorScreen(const char* title, const std::string& line1,
     }
 }
 
-extern unsigned char data_logo_wiifin_png[];
-extern unsigned int data_logo_wiifin_png_len;
-extern unsigned char data_button_start_png[];
-extern unsigned int data_button_start_png_len;
+extern unsigned char data_logo_WiiFLIX_png[];
+extern unsigned int data_logo_WiiFLIX_png_len;
 extern unsigned char data_cursors_PointerP1_64_png[];
 extern unsigned int data_cursors_PointerP1_64_png_len;
 extern unsigned char data_cursors_HandOpenP1_64_png[];
@@ -109,18 +103,12 @@ extern unsigned int data_wii_font_ttf_len;
 extern unsigned char data_jp_font_ttf[];
 extern unsigned int data_jp_font_ttf_len;
 
-#define logo_wiifin_png      data_logo_wiifin_png
-#define logo_wiifin_png_len  data_logo_wiifin_png_len
-#define button_start_png      data_button_start_png
-#define button_start_png_len  data_button_start_png_len
 #define wii_font_ttf      data_wii_font_ttf
 #define wii_font_ttf_len  data_wii_font_ttf_len
 #define jp_font_ttf       data_jp_font_ttf
 #define jp_font_ttf_len   data_jp_font_ttf_len
 
 // --- Button layout constants ---
-// btnTex is 512x128 (power-of-2 required by GX/GRRLIB).
-// Display at 280x70 (4:1 ratio preserved, sx=sy=0.547).
 static const int BX        = 170;
 static const int BW        = 300;
 static const int BH        = 58;
@@ -180,15 +168,13 @@ void App::init(const char* argv0) {
     Ui::initScreen(WiiUtils::widescreen);
 
     // Load textures and fonts from embedded data (no file I/O, always fast)
-    logoTex   = GRRLIB_LoadTexture(logo_wiifin_png);
+    logoTex   = GRRLIB_LoadTexture(data_logo_WiiFLIX_png);
     Ui::setLogo(logoTex);   /* on every red band */
-    btnTex    = GRRLIB_LoadTexture(button_start_png);
     cursorPointerTex    = GRRLIB_LoadTexture(data_cursors_PointerP1_64_png);
     font   = GRRLIB_LoadTTF(wii_font_ttf, wii_font_ttf_len);
     jpFont = GRRLIB_LoadTTF(jp_font_ttf, jp_font_ttf_len);
     Text::setFallback(jpFont);   /* Japanese titles, subtitles... in any text */
     Ui::setFont(font);
-    ringTex = GRRLIB_LoadTexture(data_ring_png);
 
     // Show a splash frame immediately so the user sees something during init.
     if (logoTex) {
@@ -432,7 +418,7 @@ void App::loop() {
 
     /* Thin wrapper so existing call sites don't need to change. */
     auto showHomeOverlay = [&]() -> bool {
-        return doShowHomeOverlay(font, btnTex, cursorPointerTex);
+        return doShowHomeOverlay(font, cursorPointerTex);
     };
 
     /* ---- Helper: wait for the network (started at boot), offering a retry
@@ -450,7 +436,7 @@ void App::loop() {
                 if (Input::isBackPressed()) return false;
                 bool slow = ticks_to_millisecs(gettime()) - t0 > 10000;
                 Ui::background();
-                Ui::spinner(ringTex, 320, 220);
+                Ui::spinner(320, 220);
                 Ui::textCentered(320, 274, tr("Connecting to the network..."), 18, p.textDim);
                 if (slow)
                     Ui::textCentered(320, 300, tr("This is taking long: the Wii's network may need a restart."), 13, p.textDim);
@@ -498,7 +484,7 @@ void App::loop() {
                        (host.rfind('.') == std::string::npos ? "(none)" : host.substr(host.rfind('.') + 1).c_str()));
         }
         if (!waitForNetwork()) return; /* DNS won't work without this */
-        LibraryView lv(font, jpFont, cursorPointerTex, ringTex,
+        LibraryView lv(font, jpFont, cursorPointerTex,
                        jellyfinClient, auth, p.serverUrl);
         lv.setUserName(p.username);
         /* the server's remote control, while this profile is open */
@@ -519,7 +505,7 @@ void App::loop() {
             if (!lv.pendingPlayUrl.empty()) {
                 std::string lastItemId;
                 bool wantsExit = runPlaySession(jellyfinClient, auth, p.serverUrl, lv,
-                                                font, btnTex, cursorPointerTex, ringTex,
+                                                font, cursorPointerTex,
                                                 lastItemId);
                 if (wantsExit || g_app_powerOff || g_app_reset) { running = false; return; }
                 saveSettings();   /* the zoom may have changed during playback */
@@ -543,7 +529,7 @@ void App::loop() {
 
     /* ---- Helper: open ConnectView, on success add/update profile + library ---- */
     auto runConnect = [&](const SavedProfile* again = nullptr) {
-        ConnectView cv(btnTex, cursorPointerTex, font, jellyfinClient);
+        ConnectView cv(cursorPointerTex, font, jellyfinClient);
         if (again) cv.setFields(again->serverUrl, again->username);   /* its password, each time */
         ConnectResult res = ConnectResult::None;
         while (res == ConnectResult::None && running) {
@@ -744,9 +730,7 @@ void App::loop() {
     VIDEO_Flush();
     VIDEO_WaitVSync();
     GRRLIB_FreeTexture(logoTex);
-    GRRLIB_FreeTexture(btnTex);
     GRRLIB_FreeTexture(cursorPointerTex);
-    GRRLIB_FreeTexture(ringTex);
     Text::clearCache();
     Text::setFallback(nullptr);
     GRRLIB_FreeTTF(font);

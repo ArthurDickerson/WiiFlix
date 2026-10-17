@@ -17,8 +17,8 @@
  */
 namespace SoundFX {
     enum class FX {
-        Start,      // button click  (button_start.png texture)
-        Select,     // cursor hover over button_start button
+        Start,      // button click
+        Select,     // cursor hover over a button
         PressKey,   // VKB key press in ConnectView
         MenuExit,   // "Yes" in HOME-menu confirmation popup
         MenuEnter,  // HOME button pressed → overlay opens

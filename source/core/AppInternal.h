@@ -18,8 +18,7 @@ bool showErrorScreen(const char* title, const std::string& line1,
 
 /* HOME menu (HomeMenu.cpp).  Returns true when the user leaves WiiFin
  * ("Wii Menu", or "Reset" which also sets g_restartApp). */
-bool doShowHomeOverlay(GRRLIB_ttfFont* font, GRRLIB_texImg* btnTex,
-                       GRRLIB_texImg* cursorPointerTex);
+bool doShowHomeOverlay(GRRLIB_ttfFont* font, GRRLIB_texImg* cursorPointerTex);
 
 /* Plays lv.pendingPlay* and what follows it (PlaySession.cpp).  lastItemId
  * receives the item playing at the end.  Returns true when the user left
@@ -29,7 +28,5 @@ bool runPlaySession(JellyfinClient& client,
                     const std::string& serverUrl,
                     LibraryView& lv,
                     GRRLIB_ttfFont* font,
-                    GRRLIB_texImg* btnTex,
                     GRRLIB_texImg* cursorTex,
-                    GRRLIB_texImg* ringTex,
                     std::string& lastItemId);

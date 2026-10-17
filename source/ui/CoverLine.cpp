@@ -1070,7 +1070,7 @@ void CoverLine::render(const ir_t& ir)
         Ui::textCentered(CENTER_X, CENTER_Y + 10, tr("Press A to try again."), 14, p.textDim);
     } else {
         /* loading: the five blocks */
-        Ui::spinner(nullptr, CENTER_X, CENTER_Y);
+        Ui::spinner(CENTER_X, CENTER_Y);
         Ui::textCentered(CENTER_X, CENTER_Y + 24, tr("Loading..."), 14, p.textDim);
     }
 

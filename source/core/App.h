@@ -22,9 +22,7 @@ private:
     void logSettings();   // one line, on leaving Settings (tests, bug reports)
 
     GRRLIB_texImg* logoTex = nullptr;
-    GRRLIB_texImg* btnTex = nullptr;
     GRRLIB_texImg* cursorPointerTex   = nullptr;
-    GRRLIB_texImg* ringTex            = nullptr;
     GRRLIB_ttfFont* font = nullptr;
     GRRLIB_ttfFont* jpFont = nullptr;
     /* the SD card's fonts/ (Chinese, Korean...): fallbacks after jpFont */

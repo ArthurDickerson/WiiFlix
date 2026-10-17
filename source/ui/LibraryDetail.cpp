@@ -74,24 +74,6 @@ const float BTN_R = 3;
  * the back button, Read more (an overview cut short), track row F_ROW + i */
 const int F_PLAY = 0, F_QUEUE = 1, F_BACK = 2, F_MORE = 3, F_ROW = 10;
 
-/* a track's list: rows of MENU_ROW_H, TRACK_MENU_ROWS at most shown */
-const int   TRACK_MENU_ROWS = 7;
-const float MENU_STEP = 28, MENU_ROW_H = 24;
-/* it hangs under its button, kept above the bottom of the screen */
-void menuBox(const DetailLayout& L, const std::vector<int>& rows, int which, int n,
-             float& x, float& y, float& w, float& h)
-{
-    int at = 0;
-    for (int i = 0; i < (int)rows.size(); ++i) if (rows[i] == which) at = i;
-    float bx, by, bw, bh;
-    rowBox(L, at, bx, by, bw, bh);
-    const int shown = n < TRACK_MENU_ROWS ? n : TRACK_MENU_ROWS;
-    x = bx; w = bw;
-    h = 12 + shown * MENU_STEP - (MENU_STEP - MENU_ROW_H);
-    y = by + bh + 4;
-    if (y + h > 460) y = 460 - h;
-}
-
 /* Validate UTF-8 and truncate at a safe codepoint boundary so the
  * renderer never receives a broken multi-byte sequence. */
 std::string safeTitle(const char* s, int maxCodepoints)
@@ -140,33 +122,24 @@ bool LibraryView::updateDetail(ir_t& ir, bool aPressed) {
     const DetailLayout L = detailLayout(detailWideThumb());
     const std::vector<int> rows = trackRows(detail);
 
-    /* a track's list open: Up / Down (or the pointer) pick, A takes it, B
-     * (or A off the list) closes it */
+    /* a track's list open (ui/TrackList): it takes the input */
     if (trackMenu != TRACK_MENU_NONE) {
-        const int n = trackMenuCount();
-        float mx, my, mw, mh;
-        menuBox(L, rows, trackMenu, n, mx, my, mw, mh);
-        int hover = -1;
-        for (int i = 0; i < TRACK_MENU_ROWS && trackMenuTop + i < n; ++i)
-            if (inBox(ir, mx + 6, my + 6 + i * MENU_STEP, mw - 12, MENU_ROW_H)) hover = trackMenuTop + i;
-        /* one choice: the pointer takes it when it moves onto another row,
-         * the D-pad moves it too, even with the pointer on the screen */
-        if (hover >= 0 && hover != trackMenuHover) { trackMenuSel = hover; trackMenuDpad = false; }
-        trackMenuHover = hover;
-        if (Input::isUpPressed()   && trackMenuSel > 0)     { --trackMenuSel; trackMenuDpad = true; }
-        if (Input::isDownPressed() && trackMenuSel + 1 < n) { ++trackMenuSel; trackMenuDpad = true; }
-        if (trackMenuSel < trackMenuTop) trackMenuTop = trackMenuSel;
-        if (trackMenuSel >= trackMenuTop + TRACK_MENU_ROWS) trackMenuTop = trackMenuSel - TRACK_MENU_ROWS + 1;
-        /* A off the list closes it, unless the D-pad chose last */
-        if (Input::isBackPressed() || (aPressed && ir.valid && hover < 0 && !trackMenuDpad)) {
+        switch (trackList.update(ir, Input::isUpPressed(), Input::isDownPressed(), aPressed,
+                                 Input::isBackPressed())) {
+        case TrackList::Result::Closed:
             SoundFX::play(SoundFX::FX::Back);
             trackMenu = TRACK_MENU_NONE;
-        } else if (aPressed) {
+            break;
+        case TrackList::Result::Picked: {
             SoundFX::play(SoundFX::FX::Start);
-            if (trackMenu < 0)       selectVersion(trackMenuSel);
-            else if (trackMenu == 0) detailAudioSel = trackMenuSel;
-            else                     detailSubSel   = trackMenuSel - 1;   /* row 0: Off */
+            const int k = trackList.chosen();
+            if (trackMenu < 0)       selectVersion(k);
+            else if (trackMenu == 0) detailAudioSel = k;
+            else                     detailSubSel   = k - 1;   /* row 0: Off */
             trackMenu = TRACK_MENU_NONE;
+            break;
+        }
+        default: break;
         }
         return false;
     }
@@ -281,24 +254,19 @@ bool LibraryView::updateDetail(ir_t& ir, bool aPressed) {
 /* A on a track's button: its list, the current one chosen */
 void LibraryView::openTrackMenu(int which) {
     trackMenu = which;
-    trackMenuSel = which < 0 ? detailVersionSel : which == 0 ? detailAudioSel : detailSubSel + 1;
-    if (trackMenuSel < 0) trackMenuSel = 0;
-    trackMenuTop = trackMenuSel >= TRACK_MENU_ROWS ? trackMenuSel - TRACK_MENU_ROWS + 1 : 0;
-    trackMenuHover = -1;
-    trackMenuDpad  = false;
+    std::vector<std::string> rows;
+    if (which < 0) {
+        for (const auto& v : detail.versions) rows.push_back(safeTitle(v.name.c_str(), 60));
+    } else if (which == 0) {
+        for (const auto& a : detail.audioStreams) rows.push_back(safeTitle(a.displayTitle.c_str(), 60));
+    } else {
+        rows.push_back(tr("Off"));
+        for (const auto& t : detail.subtitleStreams) rows.push_back(safeTitle(t.displayTitle.c_str(), 60));
+    }
+    const int current = which < 0 ? detailVersionSel : which == 0 ? detailAudioSel : detailSubSel + 1;
+    trackList.open(which < 0 ? tr("Version") : which == 0 ? tr("Audio track") : tr("Subtitles"),
+                   rows, current);
     SoundFX::play(SoundFX::FX::Open);
-}
-
-int LibraryView::trackMenuCount() const {
-    if (trackMenu < 0)  return (int)detail.versions.size();
-    if (trackMenu == 0) return (int)detail.audioStreams.size();
-    return (int)detail.subtitleStreams.size() + 1;   /* Off first */
-}
-
-std::string LibraryView::trackMenuLabel(int i) const {
-    if (trackMenu < 0)  return detail.versions[i].name;
-    if (trackMenu == 0) return detail.audioStreams[i].displayTitle;
-    return i == 0 ? std::string(tr("Off")) : detail.subtitleStreams[i - 1].displayTitle;
 }
 
 /* The resume question's layout (drawn and hit-tested alike) */
@@ -535,29 +503,7 @@ void LibraryView::drawDetailView(ir_t& ir) {
     }
 
     // ---- a track's list, over the page ----
-    if (trackMenu != TRACK_MENU_NONE) {
-        const int n = trackMenuCount();
-        float mx, my, mw, mh;
-        menuBox(L, rows, trackMenu, n, mx, my, mw, mh);
-        Ui::shadow(mx, my + 3, mw, mh, 6, 8.0f, 0x00000060);
-        Ui::roundRect(mx, my, mw, mh, 4, p.cardTop, p.cardBottom);
-        Ui::roundBorder(mx, my, mw, mh, 4, 1.5f, p.cardBorder);
-        const int current = trackMenu < 0 ? detailVersionSel : trackMenu == 0 ? detailAudioSel : detailSubSel + 1;
-        const float sbw = n > TRACK_MENU_ROWS ? 10 : 0;   /* room for the scrollbar */
-        for (int i = 0; i < TRACK_MENU_ROWS && trackMenuTop + i < n; ++i) {
-            const int k = trackMenuTop + i;
-            const float ix = mx + 6, iy = my + 6 + i * MENU_STEP, iw = mw - 12 - sbw;
-            const bool on = k == trackMenuSel;
-            Ui::button(ix, iy, iw, MENU_ROW_H, "", 13, on ? 1.0f : 0.0f, BTN_R);
-            const u32 c = on ? p.textOnAccent : p.text;
-            std::string t = fitText(font, safeTitle(trackMenuLabel(k).c_str(), 40), 13, (int)iw - 34);
-            Text::print(ix + 10, iy + 4, font, t.c_str(), 13, c);
-            if (k == current)   /* the one in use */
-                Text::print(ix + iw - 20, iy + 4, font, "\xe2\x9c\x93", 13, on ? c : p.ok);
-        }
-        if (n > TRACK_MENU_ROWS)
-            Ui::scrollbar(mx + mw - 10, my + 6, mh - 12, trackMenuTop, TRACK_MENU_ROWS, n);
-    }
+    if (trackMenu != TRACK_MENU_NONE) trackList.draw();
     if (overviewPanel) renderOverviewPanel(ir);
 }
 

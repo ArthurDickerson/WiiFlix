@@ -146,9 +146,8 @@ ConnectResult ConnectView::updateBusy() {
     return finishJob();
 }
 
-ConnectView::ConnectView(GRRLIB_texImg* btn, GRRLIB_texImg* cursor,
-                         GRRLIB_ttfFont* f, JellyfinClient& c)
-    : btnTex(btn), cursorTex(cursor), font(f), client(c) {
+ConnectView::ConnectView(GRRLIB_texImg* cursor, GRRLIB_ttfFont* f, JellyfinClient& c)
+    : cursorTex(cursor), font(f), client(c) {
     fields[0] = "";
     fields[1] = "";
     fields[2] = "";

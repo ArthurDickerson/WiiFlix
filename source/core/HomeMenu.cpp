@@ -85,10 +85,9 @@ void batteries(float cy)
  * Returns true if the user wants to exit (Wii Menu or Reset).
  * Sets g_restartApp = true when "Reset" is chosen.
  * ----------------------------------------------------------------------- */
-bool doShowHomeOverlay(GRRLIB_ttfFont* font, GRRLIB_texImg* btnTex,
-                       GRRLIB_texImg* cursorPointerTex)
+bool doShowHomeOverlay(GRRLIB_ttfFont* font, GRRLIB_texImg* cursorPointerTex)
 {
-    (void)font; (void)btnTex;
+    (void)font;
     ir_t ir;
     ir.valid = false;
     int   hmSel      = 0;    /* 0 = Wii Menu, 1 = Reset (the D-pad's) */

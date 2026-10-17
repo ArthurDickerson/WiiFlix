@@ -399,7 +399,7 @@ void LibraryView::renderItemList(ir_t& ir) {
             Ui::textCentered(cx, cy - 30, l, 52, Ui::alpha(0xFFFFFFFF, k));
         }
         if (feed.jumpPending())
-            Ui::spinner(ringTex, LIST_X + LW * 0.5f, LIST_Y + LIST_ROWS * LIST_ROW_H * 0.5f);
+            Ui::spinner(LIST_X + LW * 0.5f, LIST_Y + LIST_ROWS * LIST_ROW_H * 0.5f);
     }
 
     // Footer: the sort in force beside its button

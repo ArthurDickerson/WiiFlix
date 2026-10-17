@@ -27,10 +27,9 @@ using namespace LibDraw;
 
 // ---------------------------------------------------------------
 LibraryView::LibraryView(GRRLIB_ttfFont* f, GRRLIB_ttfFont* jf, GRRLIB_texImg* cursor,
-                          GRRLIB_texImg* ring,
                           JellyfinClient& c,
                           const JellyfinAuth& a, const std::string& url)
-    : font(f), jpFont(jf), cursorTex(cursor), ringTex(ring), client(c), auth(a), serverUrl(url),
+    : font(f), jpFont(jf), cursorTex(cursor), client(c), auth(a), serverUrl(url),
       browse(c, url, a), feed(c, url, a) {
 }
 
@@ -122,7 +121,7 @@ const char* LibraryView::labelForType(const std::string& type) {
 
 void LibraryView::drawLoadingFrame() {
     Ui::background();
-    Ui::spinner(ringTex, 320, 240);
+    Ui::spinner(320, 240);
     SoundFX::tickLoading();
     // Flush to screen and block on vsync. This serves two purposes:
     // 1. The spinner actually appears and animates on screen.
@@ -932,7 +931,7 @@ static unsigned mixKey(std::initializer_list<int> v) {
 }
 
 unsigned LibraryView::focusKey() const {
-    return mixKey({ libSel, itemSel, posterSel, detailAudioSel, detailSubSel, detailFocus, trackMenu, trackMenuSel,
+    return mixKey({ libSel, itemSel, posterSel, detailAudioSel, detailSubSel, detailFocus, trackMenu, trackList.chosen(),
                     resumeSel, seasonSel, episodeSel, continueSel, nextUpSel,
                     actRow, movieSuggestRow, movieSuggestContSel, movieSuggestRecSel,
                     tvSuggestRow, tvSuggestContSel, tvSuggestRecSel, tvUpcomingSel,
@@ -1176,7 +1175,7 @@ bool LibraryView::render(ir_t& ir) {
     if (!loading) loadingSince = spinnerSince = 0;
     Ui::background();   /* the band and its logo, loading too */
     if (loading) {
-        Ui::spinner(ringTex, 320, 240);
+        Ui::spinner(320, 240);
         drawCursor(ir);
         return true;
     }

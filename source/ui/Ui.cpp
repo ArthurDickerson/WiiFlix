@@ -884,9 +884,8 @@ void avatar(float cx, float cy, float r, const char* name, float focus)
     textCentered(cx, cy - size * 0.55f, initial, size, 0xFFFFFFFF);
 }
 
-void spinner(GRRLIB_texImg* ring, float cx, float cy)
+void spinner(float cx, float cy)
 {
-    (void)ring;   /* WiiFlix: the old video channels' five blocks instead */
     /* five steel-blue blocks in a row; a swell runs through them left to
      * right (the one it is on bigger and brighter, its neighbours a little),
      * then starts again from the left */
